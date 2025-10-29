@@ -10,17 +10,26 @@ import jwt
 from typing import Dict, Any
 from ..config import Config
 
-def create_access_token(payload: Dict[str, Any]) -> str:
+def create_jwt(user_id: int, tenant_id: int, role: str, expires_minutes: int = None) -> str:
     """
-    Crea un JWT con expiración.
-    Espera incluir: sub (user_id), tenant_id, role.
+    Emite un JWT con expiración obligatoria.
+    Payload:
+      - sub: user_id
+      - tenant_id
+      - role
+      - exp: timestamp UNIX
     """
-    to_encode = payload.copy()
-    to_encode["exp"] = int(time.time()) + int(Config.JWT_EXPIRES_MINUTES) * 60
-    return jwt.encode(to_encode, Config.JWT_SECRET, algorithm=Config.JWT_ALGORITHM)
+    exp_minutes = expires_minutes if expires_minutes is not None else Config.TOKEN_EXP_MINUTES
+    payload: Dict[str, Any] = {
+        "sub": user_id,
+        "tenant_id": tenant_id,
+        "role": role,
+        "exp": int(time.time()) + int(exp_minutes) * 60,
+    }
+    return jwt.encode(payload, Config.JWT_SECRET_KEY, algorithm="HS256")
 
-def decode_token(token: str) -> Dict[str, Any]:
+def decode_jwt(token: str) -> Dict[str, Any]:
     """
-    Decodifica y valida un JWT. Lanza excepción si inválido/expirado.
+    Valida y decodifica JWT. Lanza excepción si inválido/expirado.
     """
-    return jwt.decode(token, Config.JWT_SECRET, algorithms=[Config.JWT_ALGORITHM])
+    return jwt.decode(token, Config.JWT_SECRET_KEY, algorithms=["HS256"])

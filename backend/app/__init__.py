@@ -8,32 +8,33 @@ Inicialización de la aplicación Flask (App Factory).
 from flask import Flask
 from flask_cors import CORS
 from .config import Config
+from .db import init_db
 
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # Habilitar CORS (ajustar orígenes en producción)
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    # CORS: permitir frontend (por ahora orígenes *)
+    CORS(app, resources={r"/api/*": {"origins": app.config.get("CORS_ORIGINS", "*")}}, supports_credentials=False)
 
-    # Inicializar DB/configuración (placeholder)
-    # from .db import init_db
-    # init_db(app)
+    # Inicializar DB
+    init_db(app)
 
-    # Registro de Blueprints (rutas) – sin endpoints aún
-    # from .routes.auth_routes import auth_bp
-    # from .routes.device_routes import device_bp
-    # from .routes.alert_routes import alert_bp
-    # from .routes.log_routes import log_bp
-    # from .routes.noc_routes import noc_bp
-    # from .routes.subscription_routes import subscription_bp
-    # from .routes.health_routes import health_bp
-    # app.register_blueprint(auth_bp)
-    # app.register_blueprint(device_bp)
-    # app.register_blueprint(alert_bp)
-    # app.register_blueprint(log_bp)
-    # app.register_blueprint(noc_bp)
-    # app.register_blueprint(subscription_bp)
-    # app.register_blueprint(health_bp)
+    # Registro de Blueprints (todas bajo /api)
+    from .routes.auth_routes import auth_bp
+    from .routes.device_routes import device_bp
+    from .routes.alert_routes import alert_bp
+    from .routes.log_routes import log_bp
+    from .routes.noc_routes import noc_bp
+    from .routes.subscription_routes import sub_bp
+    from .routes.health_routes import health_bp
+
+    app.register_blueprint(auth_bp, url_prefix="/api")
+    app.register_blueprint(device_bp, url_prefix="/api")
+    app.register_blueprint(alert_bp, url_prefix="/api")
+    app.register_blueprint(log_bp, url_prefix="/api")
+    app.register_blueprint(noc_bp, url_prefix="/api")
+    app.register_blueprint(sub_bp, url_prefix="/api")
+    app.register_blueprint(health_bp, url_prefix="/api")
 
     return app

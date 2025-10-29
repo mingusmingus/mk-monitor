@@ -10,4 +10,20 @@ Campos esperados:
 - is_active
 - created_at, updated_at
 """
-# class User(Base): ...
+
+from ..db import db
+from sqlalchemy.sql import func
+from sqlalchemy import UniqueConstraint
+
+class User(db.Model):
+    __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenants.id"), nullable=False)
+    email = db.Column(db.String(255), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(16), nullable=False, default="noc")  # admin | noc
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=func.now())

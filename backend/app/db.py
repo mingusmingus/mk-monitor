@@ -1,29 +1,22 @@
 """
 Capa de acceso a datos (SQLAlchemy).
 
-- Define la sesión, engine y Base (Declarative) para modelos.
+- Instancia Flask-SQLAlchemy para integración con Flask.
 - En producción se inicializa vía Alembic (migraciones).
-- Todas las entidades deberán incluir tenant_id para aislamiento multi-tenant.
+- Todas las entidades incluyen tenant_id para aislamiento multi-tenant.
 """
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
-from .config import Config
+from flask_sqlalchemy import SQLAlchemy
 
-engine = create_engine(Config.DATABASE_URL, echo=False, future=True)
-SessionLocal = scoped_session(sessionmaker(bind=engine, autocommit=False, autoflush=False))
-Base = declarative_base()
+db = SQLAlchemy()
 
-def get_db():
-    """Generador de sesiones para inyección controlada en rutas/servicios."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-def init_db(app=None):
+def init_db(app):
     """
-    Inicializador opcional para crear tablas base en desarrollo.
-    En producción usar Alembic para versionado de esquema.
+    Inicializa la extensión de base de datos con la app Flask.
+    En desarrollo puede crear tablas (NO recomendado en prod, usar Alembic).
     """
-    Base.metadata.create_all(bind=engine)
+    db.init_app(app)
+    
+    # Solo en desarrollo, crear tablas si no existen
+    if app.config.get('APP_ENV') == 'dev':
+        with app.app_context():
+            db.create_all()

@@ -7,32 +7,38 @@ Decoradores de autorización:
 Nota: Implementaciones mínimas a completar cuando se creen endpoints.
 """
 from functools import wraps
-from flask import request, jsonify
+from flask import request, jsonify, g
+from .jwt_utils import decode_jwt
 
-def jwt_required(fn):
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        # TODO: Extraer y validar JWT del header Authorization: Bearer <token>
-        # - Decodificar y adjuntar claims a request (p.ej. request.user)
-        return fn(*args, **kwargs)
-    return wrapper
-
-def role_required(role: str):
+def require_auth(role: str | None = None):
+    """
+    Decorador para proteger endpoints con JWT.
+    - Lee Authorization: Bearer <token>
+    - Decodifica y adjunta g.user_id, g.tenant_id, g.role
+    - Si role está definido, valida autorización (403 si no cumple)
+    """
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
-            # TODO: Chequear rol en claims del JWT
-            # - Rechazar con 403 si no coincide
+            auth_header = request.headers.get("Authorization", "")
+            if not auth_header.startswith("Bearer "):
+                return jsonify({"error": "Unauthorized"}), 401
+            token = auth_header.split(" ", 1)[1].strip()
+            try:
+                claims = decode_jwt(token)
+            except Exception:
+                return jsonify({"error": "Invalid or expired token"}), 401
+
+            g.user_id = claims.get("sub")
+            g.tenant_id = claims.get("tenant_id")
+            g.role = claims.get("role")
+
+            if role is not None and g.role != role:
+                return jsonify({"error": "Forbidden"}), 403
+
             return fn(*args, **kwargs)
         return wrapper
     return decorator
-
-def tenant_required(fn):
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        # TODO: Validar que la operación se realiza sobre datos del mismo tenant_id
-        return fn(*args, **kwargs)
-    return wrapper
 
 
 #```

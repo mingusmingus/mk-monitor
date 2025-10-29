@@ -1,0 +1,77 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: mkmonitor_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mkmonitor_net
+    # Base de datos principal PostgreSQL para el backend.
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: mkmonitor_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    ports:
+      - "8081:80"
+    depends_on:
+      - postgres
+    networks:
+      - mkmonitor_net
+    # UI de administración para PostgreSQL (opcional en desarrollo).
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile # Placeholder (aún no creado)
+    container_name: mkmonitor_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      FLASK_ENV: development
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      - postgres
+    networks:
+      - mkmonitor_net
+    # Servicio Flask (placeholder). Falta Dockerfile y comando de arranque.
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile # Placeholder (aún no creado)
+    container_name: mkmonitor_frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: "http://localhost:${BACKEND_PORT:-8000}/api"
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      - backend
+    networks:
+      - mkmonitor_net
+    # SPA React (placeholder). Falta Dockerfile y configuración final.
+
+volumes:
+  postgres_data:
+
+networks:
+  mkmonitor_net:
+    driver: bridge

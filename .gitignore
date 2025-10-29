@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+venv/
+
+# Node/Frontend
+node_modules/
+dist/
+*.log
+
+# Env/Secrets
+.env
+*.env
+
+# IDE
+.vscode/
+.idea/
+
+# Alembic
+backend/migrations/versions/
+
+# Others
+.DS_Store

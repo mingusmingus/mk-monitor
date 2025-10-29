@@ -1,0 +1,6 @@
+/* Variables y estilos base del tema (placeholder). */
+:root {
+  --bg: #0b0c10;
+  --fg: #c5c6c7;
+}
+body { background: #fff; color: #222; font-family: system-ui, sans-serif; }

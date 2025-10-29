@@ -1,0 +1,5 @@
+--------------------------------------------------
+LUEGO DE FASE 1:
+He creado todos los archivos y carpetas solicitados con comentarios explicativos y placeholders. 
+Para levantar la infraestructura, duplica infra/.env.example a infra/.env y luego usa docker-compose desde la carpeta infra
+--------------------------------------------------

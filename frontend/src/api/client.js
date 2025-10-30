@@ -1,9 +1,10 @@
 // Cliente HTTP base (Axios) para consumir el backend Flask.
-// Configura baseURL desde variables de entorno de Vite (VITE_API_URL) y adjunta JWT si existe.
+// Base URL en dev: http://localhost:5000/api
+// TODO: permitir inyección del token desde AuthContext si se prefiere.
 import axios from 'axios'
 
 const client = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 })
 
 client.interceptors.request.use((config) => {

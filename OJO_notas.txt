@@ -3,3 +3,50 @@ LUEGO DE FASE 1:
 He creado todos los archivos y carpetas solicitados con comentarios explicativos y placeholders. 
 Para levantar la infraestructura, duplica infra/.env.example a infra/.env y luego usa docker-compose desde la carpeta infra
 --------------------------------------------------
+
+
+--------------------------------------------------
+LUEGO DE FASE 2:
+Cómo ejecutar
+
+Instalar dependencias en mk-monitor/frontend/package.json:
+Terminal VS Code:
+npm install
+npm run dev
+El cliente apunta por defecto a http://localhost:5000/api (configurable con VITE_API_URL).
+Endpoints backend relevantes:
+Login: app.routes.auth_routes.login
+Dispositivos: app.routes.device_routes.list_devices, app.routes.device_routes.create_device
+Alertas: app.routes.alert_routes.list_alerts
+NOC status: app.routes.noc_routes.update_alert_status
+Logs: app.routes.log_routes.device_logs
+Suscripción: app.routes.subscription_routes.subscription_status
+Notas/TODO técnicos en el código:
+
+En alta de dispositivo se envían credenciales cifradas como "TODO"; integrar cifrado real según app.models.device.Device y ENCRYPTION_KEY.
+Protección por roles: el wrapper RequireAuth solo comprueba token; se debe refinar por role.
+Suscripción: se implementó fallback de endpoint por prefijos duplicados en blueprint.
+Considerar proxy Vite si se desea usar baseURL relativa /api.
+Con esto, el frontend compila y navega con routing básico, contextos, componentes de UI y páginas conectadas al backend mínimo.Cómo ejecutar
+
+Instalar dependencias en mk-monitor/frontend/package.json:
+Terminal VS Code:
+npm install
+npm run dev
+El cliente apunta por defecto a http://localhost:5000/api (configurable con VITE_API_URL).
+Endpoints backend relevantes:
+Login: app.routes.auth_routes.login
+Dispositivos: app.routes.device_routes.list_devices, app.routes.device_routes.create_device
+Alertas: app.routes.alert_routes.list_alerts
+NOC status: app.routes.noc_routes.update_alert_status
+Logs: app.routes.log_routes.device_logs
+Suscripción: app.routes.subscription_routes.subscription_status
+Notas/TODO técnicos en el código:
+
+En alta de dispositivo se envían credenciales cifradas como "TODO"; integrar cifrado real según app.models.device.Device y ENCRYPTION_KEY.
+Protección por roles: el wrapper RequireAuth solo comprueba token; se debe refinar por role.
+Suscripción: se implementó fallback de endpoint por prefijos duplicados en blueprint.
+Considerar proxy Vite si se desea usar baseURL relativa /api.
+Con esto, el frontend compila y navega con routing básico, contextos, componentes de UI y páginas conectadas al backend mínimo.
+--------------------------------------------------
+

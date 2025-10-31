@@ -28,6 +28,7 @@ def create_app() -> Flask:
     from .routes.noc_routes import noc_bp
     from .routes.subscription_routes import sub_bp
     from .routes.health_routes import health_bp
+    from .routes.sla_routes import sla_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api")
     app.register_blueprint(device_bp, url_prefix="/api")
@@ -36,5 +37,6 @@ def create_app() -> Flask:
     app.register_blueprint(noc_bp, url_prefix="/api")
     app.register_blueprint(sub_bp, url_prefix="/api")
     app.register_blueprint(health_bp, url_prefix="/api")
+    app.register_blueprint(sla_bp, url_prefix="/api")
 
     return app

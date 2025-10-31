@@ -20,6 +20,7 @@ def health_devices():
       - rojo si el device tiene Alerta Severa o Crítica no resuelta
       - amarillo si tiene Alerta Menor activa
       - verde caso contrario
+    Seguridad: No exponer campos internos ni credenciales.
     """
     devices = Device.query.filter_by(tenant_id=g.tenant_id).all()
     result = []

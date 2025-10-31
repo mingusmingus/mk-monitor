@@ -2,11 +2,10 @@
 Rutas de alertas:
 
 - Listado, actualización de estado operativo y consulta por dispositivo.
-- Placeholder de Blueprint sin endpoints todavía.
 """
 from flask import Blueprint, request, jsonify, g
 from ..auth.decorators import require_auth
-from ..models.alert import Alert
+from ..services import alert_service
 
 alert_bp = Blueprint("alerts", __name__)
 
@@ -17,29 +16,11 @@ def list_alerts():
     Listado de alertas con filtros opcionales:
       - estado
       - device_id
-      - fecha_inicio / fecha_fin
+      - fecha_inicio / fecha_fin (TODO)
       - status_operativo
-    Debe devolver solo alertas del tenant (g.tenant_id).
+    Solo alertas del tenant (g.tenant_id).
     """
-    q = Alert.query.filter_by(tenant_id=g.tenant_id)
-
-    estado = request.args.get("estado")
-    if estado:
-        q = q.filter(Alert.estado == estado)
-
-    device_id = request.args.get("device_id", type=int)
-    if device_id:
-        q = q.filter(Alert.device_id == device_id)
-
-    status_operativo = request.args.get("status_operativo")
-    if status_operativo:
-        q = q.filter(Alert.status_operativo == status_operativo)
-
-    # TODO: filtros por fecha_inicio/fecha_fin en created_at/updated_at
-    # fecha_inicio = request.args.get("fecha_inicio")
-    # fecha_fin = request.args.get("fecha_fin")
-
-    alerts = q.order_by(Alert.created_at.desc()).all()
+    alerts = alert_service.list_alerts(g.tenant_id, request.args)
     result = [{
         "id": a.id,
         "device_id": a.device_id,

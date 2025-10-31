@@ -25,3 +25,30 @@ backend/migrations/versions/
 
 # Others
 .DS_Store
+
+# --- Reglas adicionales específicas del proyecto ---
+# Backend: caches y entornos locales
+/backend/__pycache__/
+/backend/.venv/
+/backend/*.pyc
+
+# Frontend: dependencias y build
+/frontend/node_modules/
+/frontend/dist/
+
+# Infra: variables locales
+/infra/.env
+
+# Logs y bases locales
+*.sqlite
+
+# Secrets/keys (no subir nunca)
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+*.asc
+*.gpg
+*.secrets
+*.secret

@@ -2,12 +2,13 @@
 Rutas de dispositivos:
 
 - CRUD de equipos MikroTik y validación de límites por plan.
-- Placeholder de Blueprint sin endpoints todavía.
 """
 from flask import Blueprint, request, jsonify, g
-
 from ..auth.decorators import require_auth
 from ..models.device import Device
+from ..db import db
+from ..services import alert_service, device_service
+from ..services.device_service import DeviceLimitReached
 
 device_bp = Blueprint("devices", __name__)
 
@@ -16,11 +17,13 @@ device_bp = Blueprint("devices", __name__)
 def list_devices():
     """
     Devuelve SOLO los dispositivos del tenant actual g.tenant_id.
-    Incluye health_status calculado (por ahora 'verde' hardcodeado).
+    Incluye health_status calculado.
+    Importante: NO exponer credenciales cifradas (username_encrypted/password_encrypted) en la salida JSON.
     """
-    devices = Device.query.filter_by(tenant_id=g.tenant_id).all()
+    devices = device_service.list_devices_for_tenant(g.tenant_id)
     result = []
     for d in devices:
+        health = alert_service.compute_device_health(g.tenant_id, d.id)
         result.append({
             "id": d.id,
             "name": d.name,
@@ -30,7 +33,7 @@ def list_devices():
             "location": d.location,
             "wan_type": d.wan_type,
             "created_at": d.created_at.isoformat() if d.created_at else None,
-            "health_status": "verde",  # TODO: calcular según alertas activas
+            "health_status": health,
         })
     return jsonify(result), 200
 
@@ -39,30 +42,18 @@ def list_devices():
 def create_device():
     """
     Crea un dispositivo. Solo admin.
-    - Validar límite de plan del tenant (TODO).
-    - Si supera límite: 402 + { upsell: true, message: "..."}
-    - Si OK, almacenar device (credenciales deben venir cifradas o cifrarse aquí).
-    Body: { name, ip_address, port, username_encrypted, password_encrypted, ... }
+    - Valida límite de plan del tenant.
+    - Si supera límite: 402 + { upsell: true, message, required_plan_hint }
+    - Si OK, almacena device cifrando credenciales si vinieran en claro.
+    Body: { name, ip_address, port, username(_encrypted)?, password(_encrypted)?, ... }
     """
     data = request.get_json(silent=True) or {}
-
-    # TODO: verificar límites del plan para g.tenant_id
-    # if supera_limite:
-    #     return jsonify({"upsell": True, "message": "Has alcanzado el límite de tu plan."}), 402
-
-    device = Device(
-        tenant_id=g.tenant_id,
-        name=data.get("name"),
-        ip_address=data.get("ip_address"),
-        port=int(data.get("port", 22)),
-        username_encrypted=data.get("username_encrypted"),
-        password_encrypted=data.get("password_encrypted"),
-        firmware_version=data.get("firmware_version"),
-        location=data.get("location"),
-        wan_type=data.get("wan_type"),
-    )
-    from ..db import db
-    db.session.add(device)
-    db.session.commit()
-
-    return jsonify({"id": device.id}), 201
+    try:
+        device = device_service.create_device(g.tenant_id, data)
+        return jsonify({"id": device.id}), 201
+    except DeviceLimitReached as e:
+        return jsonify({
+            "upsell": True,
+            "message": e.message,
+            "required_plan_hint": e.required_plan_hint
+        }), 402

@@ -1,9 +1,20 @@
---------------------------------------------------
+-
+
+
+
+
+
+
+
+
+
+
+
+-------------------------------------------------
 LUEGO DE FASE 1:
 He creado todos los archivos y carpetas solicitados con comentarios explicativos y placeholders. 
 Para levantar la infraestructura, duplica infra/.env.example a infra/.env y luego usa docker-compose desde la carpeta infra
 --------------------------------------------------
-
 
 --------------------------------------------------
 LUEGO DE FASE 2:
@@ -50,3 +61,10 @@ Considerar proxy Vite si se desea usar baseURL relativa /api.
 Con esto, el frontend compila y navega con routing básico, contextos, componentes de UI y páginas conectadas al backend mínimo.
 --------------------------------------------------
 
+--------------------------------------------------
+LUEGO DE FASE 4:
+Si consumes nuevas rutas desde el frontend, ya existen helpers: frontend/src/api/subscriptionApi.js, frontend/src/api/alertApi.js, frontend/src/api/deviceApi.js.
+Puedes usar las funciones del servicio también en otros endpoints, por ejemplo en health para calcular semáforos con services.alert_service.compute_device_health.
+Recuerda que todos los queries filtran por tenant_id. Esto se respeta en: routes.device_routes.list_devices, routes.alert_routes.list_alerts, routes.noc_routes.update_alert_status, services.alert_service.compute_device_health.
+Los límites comerciales se exponen vía services.subscription_service.get_current_subscription y el upsell se propaga por la excepción services.device_service.DeviceLimitReached.
+--------------------------------------------------

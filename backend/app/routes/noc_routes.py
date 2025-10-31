@@ -2,13 +2,10 @@
 Rutas NOC:
 
 - Acciones del operador (marcar En curso/Resuelta, comentar).
-- Placeholder de Blueprint sin endpoints todavía.
 """
 from flask import Blueprint, request, jsonify, g
 from ..auth.decorators import require_auth
-from ..models.alert import Alert
-from ..models.alert_status_history import AlertStatusHistory
-from ..db import db
+from ..services import alert_service
 
 noc_bp = Blueprint("noc", __name__)
 
@@ -17,31 +14,24 @@ noc_bp = Blueprint("noc", __name__)
 def update_alert_status(alert_id: int):
     """
     Body: { status_operativo, comentario }
-    Reglas:
-      - Solo usuarios del mismo tenant (enforced por query).
-      - Operador NOC puede marcar "En curso" o "Resuelta".
-      - Guardar histórico en AlertStatusHistory.
+    - Solo usuarios del mismo tenant (enforced en service).
+    - Registra histórico para SLA.
     """
     data = request.get_json(silent=True) or {}
     new_status = data.get("status_operativo")
     comentario = data.get("comentario")
+    if new_status not in {"Pendiente", "En curso", "Resuelta"}:
+        return jsonify({"error": "status_operativo inválido"}), 400
 
-    alert = Alert.query.filter_by(id=alert_id, tenant_id=g.tenant_id).first()
-    if not alert:
+    try:
+        alert = alert_service.update_alert_status(
+            alert_id=alert_id,
+            user_id=g.user_id,
+            tenant_id=g.tenant_id,
+            nuevo_status=new_status,
+            comentario=comentario
+        )
+    except ValueError:
         return jsonify({"error": "Alerta no encontrada"}), 404
-
-    # TODO: validar permisos/rol si se requiere política específica
-    prev = alert.status_operativo
-    alert.status_operativo = new_status
-    alert.comentario_ultimo = comentario
-
-    hist = AlertStatusHistory(
-        alert_id=alert.id,
-        previous_status_operativo=prev,
-        new_status_operativo=new_status,
-        changed_by_user_id=g.user_id
-    )
-    db.session.add(hist)
-    db.session.commit()
 
     return jsonify({"id": alert.id, "status_operativo": alert.status_operativo}), 200

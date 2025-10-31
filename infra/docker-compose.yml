@@ -1,77 +1,78 @@
 version: "3.9"
 
+networks:
+  mknet:
+    driver: bridge
+
+volumes:
+  postgres-data:
+
 services:
   postgres:
-    image: postgres:16
-    container_name: mkmonitor_postgres
+    image: postgres:15
+    container_name: mkmonitor-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Volumen para persistencia de datos
+      - postgres-data:/var/lib/postgresql/data
     networks:
-      - mkmonitor_net
-    # Base de datos principal PostgreSQL para el backend.
+      - mknet
 
   pgadmin:
-    image: dpage/pgadmin4:8
-    container_name: mkmonitor_pgadmin
+    image: dpage/pgadmin4:latest
+    container_name: mkmonitor-pgadmin
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
     ports:
-      - "8081:80"
+      - "5050:80"
     depends_on:
       - postgres
     networks:
-      - mkmonitor_net
-    # UI de administración para PostgreSQL (opcional en desarrollo).
+      - mknet
 
   backend:
+    # TODO: agregar Dockerfile en ../backend
     build:
       context: ../backend
-      dockerfile: Dockerfile # Placeholder (aún no creado)
-    container_name: mkmonitor_backend
+    container_name: mkmonitor-backend
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
-      DATABASE_URL: ${DATABASE_URL}
+      # Pasar variables al contenedor (usa las del .env)
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASS: ${POSTGRES_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      FLASK_ENV: development
+      APP_ENV: ${APP_ENV}
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "5000:5000"
     depends_on:
       - postgres
     networks:
-      - mkmonitor_net
-    # Servicio Flask (placeholder). Falta Dockerfile y comando de arranque.
+      - mknet
 
   frontend:
+    # TODO: agregar Dockerfile en ../frontend
     build:
       context: ../frontend
-      dockerfile: Dockerfile # Placeholder (aún no creado)
-    container_name: mkmonitor_frontend
+    container_name: mkmonitor-frontend
     restart: unless-stopped
     environment:
-      VITE_API_URL: "http://localhost:${BACKEND_PORT:-8000}/api"
+      # Configura la URL del backend para Vite
+      - VITE_API_URL=http://backend:5000/api
     ports:
-      - "${FRONTEND_PORT:-5173}:5173"
+      - "5173:5173"
     depends_on:
       - backend
     networks:
-      - mkmonitor_net
-    # SPA React (placeholder). Falta Dockerfile y configuración final.
-
-volumes:
-  postgres_data:
-
-networks:
-  mkmonitor_net:
-    driver: bridge
+      - mknet

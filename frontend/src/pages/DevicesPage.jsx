@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { getDevices, createDevice } from '../api/deviceApi.js'
 import DeviceHealthIndicator from '../components/DeviceHealthIndicator.jsx'
 import UpsellModal from '../components/UpsellModal.jsx'
+import useAuth from '../hooks/useAuth.js'
 
 // Listado y alta de equipos. Si supera límite -> Upsell.
 export default function DevicesPage() {
@@ -9,8 +10,11 @@ export default function DevicesPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  const [form, setForm] = useState({ name: '', ip_address: '', port: 22 })
+  // Añadir username/password reales en el formulario
+  const [form, setForm] = useState({ name: '', ip_address: '', port: 22, username: '', password: '' })
   const [showUpsell, setShowUpsell] = useState(false)
+  const { tenantStatus } = useAuth()
+  const isSuspended = tenantStatus === 'suspendido'
 
   const load = async () => {
     setLoading(true)
@@ -31,16 +35,20 @@ export default function DevicesPage() {
 
   const onAdd = async (e) => {
     e.preventDefault()
+    if (isSuspended) {
+      alert('Acción bloqueada: cuenta suspendida')
+      return
+    }
     try {
-      // NOTA: backend requiere credenciales cifradas, aquí solo placeholder.
+      // Enviar credenciales en claro; el backend las cifra en reposo y NUNCA las devuelve.
       await createDevice({
         name: form.name,
         ip_address: form.ip_address,
         port: Number(form.port) || 22,
-        username_encrypted: 'TODO',
-        password_encrypted: 'TODO'
+        username: form.username,
+        password: form.password
       })
-      setForm({ name: '', ip_address: '', port: 22 })
+      setForm({ name: '', ip_address: '', port: 22, username: '', password: '' })
       load()
     } catch (err) {
       if (err.upsell) {
@@ -74,8 +82,34 @@ export default function DevicesPage() {
             onChange={(e) => setForm((f) => ({ ...f, port: e.target.value }))}
             placeholder="Puerto"
           />
-          <button className="btn btn-primary" type="submit">+ Agregar equipo</button>
+          {/* Campos de credenciales (no se muestran luego y no se guardan en cliente) */}
+          <input
+            value={form.username}
+            onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+            placeholder="Usuario MikroTik"
+            required
+          />
+          <input
+            type="password"
+            value={form.password}
+            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+            placeholder="Password MikroTik"
+            required
+          />
+          <button
+            className="btn btn-primary"
+            type="submit"
+            disabled={isSuspended}
+            title={isSuspended ? 'Acción bloqueada: cuenta suspendida' : undefined}
+          >
+            + Agregar equipo
+          </button>
         </form>
+        {isSuspended && (
+          <div className="muted small mt">
+            ℹ️ Modo solo lectura: no puedes agregar equipos mientras la cuenta esté suspendida.
+          </div>
+        )}
       </div>
 
       <div className="card">

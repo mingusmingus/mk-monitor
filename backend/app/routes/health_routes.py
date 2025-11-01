@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, g
 from ..auth.decorators import require_auth
 from ..models.device import Device
 from ..models.alert import Alert
+from ..services import alert_service  # añadido
 
 health_bp = Blueprint("health", __name__)
 
@@ -22,18 +23,17 @@ def health_devices():
       - verde caso contrario
     Seguridad: No exponer campos internos ni credenciales.
     """
-    devices = Device.query.filter_by(tenant_id=g.tenant_id).all()
-    result = []
-    for d in devices:
-        # TODO: calcular según alertas activas no resueltas
-        # alerts = Alert.query.filter_by(tenant_id=g.tenant_id, device_id=d.id).filter(Alert.status_operativo != "Resuelta").all()
-        # if any(a.estado in ("Alerta Severa", "Alerta Crítica") for a in alerts): health = "rojo"
-        # elif any(a.estado == "Alerta Menor" for a in alerts): health = "amarillo"
-        # else: health = "verde"
-        health = "verde"
-        result.append({
-            "device_id": d.id,
-            "name": d.name,
-            "health_status": health
-        })
-    return jsonify(result), 200
+    try:
+        devices = Device.query.filter_by(tenant_id=g.tenant_id).all()
+        result = []
+        for d in devices:
+            health = alert_service.compute_device_health(g.tenant_id, d.id)
+            result.append({
+                "device_id": d.id,
+                "name": d.name,
+                "health_status": health
+            })
+        return jsonify(result), 200
+    except Exception:
+        # Manejo de errores consistente sin exponer detalles internos
+        return jsonify({"error": "Error al obtener estado de salud"}), 500

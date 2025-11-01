@@ -2,13 +2,22 @@ import React, { useState } from 'react'
 import useFetchAlerts from '../hooks/useFetchAlerts.js'
 import AlertCard from '../components/AlertCard.jsx'
 import { updateAlertStatus } from '../api/alertApi.js'
+import useAuth from '../hooks/useAuth.js'
 
 // Listado/gestión de alertas con filtros básicos.
+// Bloqueo por suspensión: deshabilitar acciones de cambio de estado.
 export default function AlertsPage() {
+  const { tenantStatus } = useAuth()
   const [filters, setFilters] = useState({ estado: '', device_id: '', status_operativo: '' })
   const { alerts, loading, error, refetch } = useFetchAlerts(filters)
 
+  const isSuspended = tenantStatus === 'suspendido'
+
   const onAction = async (alert, newStatus) => {
+    if (isSuspended) {
+      alert('Acción bloqueada: cuenta suspendida')
+      return
+    }
     await updateAlertStatus(alert.id, { status_operativo: newStatus })
     refetch()
   }
@@ -45,13 +54,26 @@ export default function AlertsPage() {
           </select>
           <button className="btn" onClick={refetch}>Filtrar</button>
         </div>
+        {isSuspended && (
+          <div className="muted small mt">
+            ℹ️ Modo solo lectura: no puedes cambiar el estado de alertas mientras la cuenta esté suspendida.
+          </div>
+        )}
       </div>
 
       <div className="col gap">
         {loading && <div className="muted">Cargando...</div>}
         {error && <div className="error">{String(error)}</div>}
         {!loading && !alerts.length && <div className="muted">Sin resultados.</div>}
-        {alerts.map((a) => <AlertCard key={a.id} alert={a} onAction={onAction} />)}
+        {alerts.map((a) => (
+          <div
+            key={a.id}
+            style={isSuspended ? { opacity: 0.6, pointerEvents: 'none' } : undefined}
+            title={isSuspended ? 'Acción bloqueada: cuenta suspendida' : undefined}
+          >
+            <AlertCard alert={a} onAction={isSuspended ? null : onAction} />
+          </div>
+        ))}
       </div>
     </div>
   )

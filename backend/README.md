@@ -48,3 +48,15 @@ En producción usar Alembic con pipeline CI/CD.
 - Validación de tenant en cada request:
   - Decorador [`auth.decorators.require_auth`](mk-monitor/backend/app/auth/decorators.py) fija `g.tenant_id`
   - Endpoints filtran por `tenant_id` (ej. [`alert_routes.list_alerts`](mk-monitor/backend/app/routes/alert_routes.py), [`device_routes.list_devices`](mk-monitor/backend/app/routes/device_routes.py), [`log_routes.device_logs`](mk-monitor/backend/app/routes/log_routes.py))
+
+## Rate limiting y Redis (producción)
+
+El contador de intentos fallidos de login actual es en memoria (por IP+email) dentro de [`auth_routes.login`](mk-monitor/backend/app/routes/auth_routes.py) usando helpers locales. En producción, debe migrarse a un backend centralizado (Redis) para:
+- Compartir estado entre réplicas del backend.
+- Evitar pérdida del contador al reiniciar procesos.
+- Permitir ventanas deslizantes y bloqueos temporales configurables.
+
+TODO:
+- Proveer `REDIS_URL` vía entorno.
+- Implementar un cliente Redis y reemplazar el almacenamiento en `FAILED_LOGINS` por estructuras en Redis (p. ej. claves con TTL).
+- Añadir configuración de límites por ruta y por IP en un middleware.

@@ -1,15 +1,3 @@
--
-
-
-
-
-
-
-
-
-
-
-
 -------------------------------------------------
 LUEGO DE FASE 1:
 He creado todos los archivos y carpetas solicitados con comentarios explicativos y placeholders. 
@@ -67,4 +55,19 @@ Si consumes nuevas rutas desde el frontend, ya existen helpers: frontend/src/api
 Puedes usar las funciones del servicio también en otros endpoints, por ejemplo en health para calcular semáforos con services.alert_service.compute_device_health.
 Recuerda que todos los queries filtran por tenant_id. Esto se respeta en: routes.device_routes.list_devices, routes.alert_routes.list_alerts, routes.noc_routes.update_alert_status, services.alert_service.compute_device_health.
 Los límites comerciales se exponen vía services.subscription_service.get_current_subscription y el upsell se propaga por la excepción services.device_service.DeviceLimitReached.
+--------------------------------------------------
+
+--------------------------------------------------
+⚠️ Nota: ENCRYPTION_KEY debe rotarse en producción (config.py línea 29 tiene valor dummy).
+--------------------------------------------------
+--------------------------------------------------
+    Local (sin Docker):
+        Crea backend/.env con: DEEPSEEK_API_KEY=tu_clave
+        Asegúrate de que config.py use os.getenv("DEEPSEEK_API_KEY") y que python-dotenv cargue el .env (load_dotenv()).
+
+    Con Docker-compose:
+        Crea infra/.env con: DEEPSEEK_API_KEY=tu_clave
+        En docker-compose.yml, pasa la variable al servicio backend (env_file: ./infra/.env o environment).
+
+    No subas la clave real al repo; deja solo un placeholder en infra/.env.example.
 --------------------------------------------------

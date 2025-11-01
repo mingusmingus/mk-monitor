@@ -2,11 +2,11 @@
 Rutas de logs:
 
 - Consulta histórica con filtros de fecha y dispositivo.
-- Placeholder de Blueprint sin endpoints todavía.
 """
 from flask import Blueprint, request, jsonify, g, Response
 from ..auth.decorators import require_auth
 from ..models.log_entry import LogEntry
+from ..models.device import Device
 from datetime import datetime
 import io, csv
 
@@ -16,30 +16,48 @@ log_bp = Blueprint("logs", __name__)
 @require_auth()
 def device_logs(device_id: int):
     """
-    Query params:
-      - limit (1..50)
-      - fecha_inicio, fecha_fin (ISO 8601)
-      - export: csv | pdf
     Devuelve logs del dispositivo dentro del tenant.
+    
+    Query params:
+      - limit (5|10|20; default 10)
+      - fecha_inicio (ISO 8601 UTC)
+      - fecha_fin (ISO 8601 UTC)
+      - export: csv | pdf
+    
+    Nota importante (timezone - prioridad BAJA):
+      Las fechas recibidas (fecha_inicio, fecha_fin) se interpretan en UTC.
+      El campo timestamp_equipo se almacena y consulta como timezone-aware (UTC).
+      Si el cliente envía fechas locales, debe convertirlas a UTC antes de enviar.
+    
+    Seguridad:
+      - Valida propiedad del dispositivo por tenant.
+      - Mitigación CSV injection en export.
     """
+    # Validar propiedad del dispositivo (tenant)
+    owner = Device.query.filter_by(id=device_id, tenant_id=g.tenant_id).first()
+    if not owner:
+        return jsonify({"error": "Dispositivo no encontrado"}), 404
+
+    # limit en {5,10,20}
+    allowed_limits = {5, 10, 20}
     limit = request.args.get("limit", default=10, type=int)
-    limit = min(max(limit, 1), 50)
+    if limit not in allowed_limits:
+        limit = 10
 
-    # Filtros por rango de tiempo (opcional)
-    fecha_inicio_raw = request.args.get("fecha_inicio")
-    fecha_fin_raw = request.args.get("fecha_fin")
-    fecha_inicio = None
-    fecha_fin = None
-    try:
-        if fecha_inicio_raw:
-            fecha_inicio = datetime.fromisoformat(fecha_inicio_raw)
-        if fecha_fin_raw:
-            fecha_fin = datetime.fromisoformat(fecha_fin_raw)
-    except Exception:
-        # Ignorar formatos inválidos; en producción validar y devolver 400
-        fecha_inicio = None
-        fecha_fin = None
+    # Filtros por rango de tiempo (ISO 8601; robusto)
+    def _parse_iso(s: str):
+        if not s:
+            return None
+        try:
+            s = s.strip().replace("Z", "+00:00")
+            return datetime.fromisoformat(s)
+        except Exception:
+            return None
 
+    fecha_inicio = _parse_iso(request.args.get("fecha_inicio"))
+    fecha_fin = _parse_iso(request.args.get("fecha_fin"))
+
+    # Query aislada por tenant y device
     q = LogEntry.query.filter_by(tenant_id=g.tenant_id, device_id=device_id)
     if fecha_inicio:
         q = q.filter(LogEntry.timestamp_equipo >= fecha_inicio)
@@ -51,7 +69,7 @@ def device_logs(device_id: int):
 
     export = request.args.get("export", "").lower().strip()
     if export == "csv":
-        # TODO(security): Mitigar CSV injection prefijando comilla simple si el valor inicia con =, +, - o @
+        # Mitigación CSV injection: prefijar comilla simple si empieza con =, +, - o @
         def _csv_safe(s: str) -> str:
             if not s:
                 return ""

@@ -18,6 +18,8 @@ class LogEntry(db.Model):
     __tablename__ = "logs"
     __table_args__ = (
         db.Index("ix_logs_device_ts", "device_id", "timestamp_equipo"),
+        # TODO: evaluar índice compuesto por (tenant_id, device_id, timestamp_equipo) para queries por rango,
+        #       garantizando timestamps en UTC (timezone-aware) de extremo a extremo.
     )
 
     id = db.Column(db.Integer, primary_key=True)

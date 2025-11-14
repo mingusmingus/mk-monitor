@@ -47,7 +47,6 @@ En producción usar Alembic con pipeline CI/CD.
   - [`auth_routes.login`](mk-monitor/backend/app/routes/auth_routes.py) y helpers `_is_locked`, `_register_failed`
 - Validación de tenant en cada request:
   - Decorador [`auth.decorators.require_auth`](mk-monitor/backend/app/auth/decorators.py) fija `g.tenant_id`
-  - Endpoints filtran por `tenant_id` (ej. [`alert_routes.list_alerts`](mk-monitor/backend/app/routes/alert_routes.py), [`device_routes.list_devices`](mk-monitor/backend/app/routes/device_routes.py), [`log_routes.device_logs`](mk-monitor/backend/app/routes/log_routes.py))
 
 ## Rate limiting y Redis (producción)
 
@@ -60,3 +59,56 @@ TODO:
 - Proveer `REDIS_URL` vía entorno.
 - Implementar un cliente Redis y reemplazar el almacenamiento en `FAILED_LOGINS` por estructuras en Redis (p. ej. claves con TTL).
 - Añadir configuración de límites por ruta y por IP en un middleware.
+
+## Integración IA (DeepSeek)
+
+### Configuración
+
+El backend soporta análisis de logs con DeepSeek (LLM) o heurísticas locales según configuración:
+
+**Variables de entorno** (configurar en `infra/.env`):
+```env
+DEEPSEEK_API_KEY=sk-xxxxx               # API key de DeepSeek (obligatoria si usas DeepSeek)
+DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
+DEEPSEEK_MODEL=deepseek-chat
+AI_ANALYSIS_PROVIDER=auto               # heuristic | deepseek | auto
+AI_TIMEOUT_SEC=20
+AI_MAX_TOKENS=800
+```
+
+**Modos de operación** (`AI_ANALYSIS_PROVIDER`):
+- `heuristic`: Solo heurísticas locales (sin llamadas a LLM)
+- `deepseek`: Fuerza uso de DeepSeek; falla si API key ausente o request falla
+- `auto` (recomendado): Intenta DeepSeek si hay API key; fallback a heurísticas si falla o key ausente
+
+### Flujo de análisis
+
+1. **Ingesta**: [`monitoring_service.get_router_logs`](mk-monitor/backend/app/services/monitoring_service.py) obtiene logs del router MikroTik (RouterOS API o SSH)
+2. **Persistencia**: Logs se almacenan en [`LogEntry`](mk-monitor/backend/app/models/log_entry.py)
+3. **Análisis**: [`ai_analysis_service.analyze_logs`](mk-monitor/backend/app/services/ai_analysis_service.py) procesa logs con:
+   - **DeepSeek**: Envía logs al LLM con prompt estructurado, recibe alertas en JSON
+   - **Heurísticas**: Detecta patrones conocidos ("login failed", "pppoe reconnect")
+4. **Generación de alertas**: [`monitoring_service.analyze_and_generate_alerts`](mk-monitor/backend/app/services/monitoring_service.py) crea [`Alert`](mk-monitor/backend/app/models/alert.py) con deduplicación
+
+### Taxonomía de estados
+
+Todas las alertas usan 4 niveles canónicos:
+- **Aviso**: Información sin impacto operativo inmediato
+- **Alerta Menor**: Problema leve, atención en plazo medio
+- **Alerta Severa**: Problema grave, atención urgente
+- **Alerta Crítica**: Fallo crítico, atención inmediata
+
+El servicio normaliza automáticamente variantes de DeepSeek a estos valores.
+
+### Seguridad
+
+- **API key**: Nunca commitear `DEEPSEEK_API_KEY` al repo. Usar solo `infra/.env` (gitignored).
+- **docker-compose**: La key se inyecta vía `env_file: ./infra/.env` en el servicio backend.
+- **Logs**: El sistema NO loguea la API key ni logs crudos sensibles.
+
+### TODOs
+
+- [ ] Backoff/retry automático si DeepSeek devuelve 429 (rate limit)
+- [ ] Chunking inteligente de logs largos para respetar límite de tokens
+- [ ] Deduplicación avanzada y correlación de alertas entre dispositivos
+- [ ] Caché de respuestas para logs idénticos (Redis)

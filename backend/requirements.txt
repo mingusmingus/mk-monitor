@@ -1,5 +1,6 @@
 Flask
 Flask-Cors
+Flask-SQLAlchemy
 SQLAlchemy
 psycopg2-binary
 python-dotenv
@@ -8,3 +9,14 @@ PyJWT
 cryptography
 requests
 alembic
+Flask-Limiter[redis]>=3.5.0
+redis>=5.0.0
+
+# Conexión MikroTik (opcionales)
+# Instalar según necesidad: pip install librouteros routeros-api paramiko
+librouteros>=3.2.1        # Recomendado: cliente RouterOS API moderno
+routeros-api>=0.17.0      # Alternativa: cliente RouterOS API legacy
+paramiko>=3.0.0           # Fallback SSH para comandos CLI
+
+# Optional: PDF export (pure Python, sin dependencias nativas)
+reportlab>=4.0.0

@@ -9,6 +9,7 @@ from ..auth.jwt_utils import create_jwt
 from ..models.user import User
 from ..models.tenant import Tenant
 from ..config import Config
+from ..__init__ import limiter
 import time
 
 # Protección básica anti fuerza bruta (en memoria).
@@ -50,6 +51,7 @@ def _reset_lock(key: tuple[str, str]) -> None:
 auth_bp = Blueprint("auth", __name__)
 
 @auth_bp.post("/auth/login")
+@limiter.limit("10/minute; 50/hour", override_defaults=False)
 def login():
     """
     Body: { email, password }

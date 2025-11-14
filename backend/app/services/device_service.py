@@ -9,9 +9,10 @@ from typing import List, Dict, Any, Optional
 from base64 import urlsafe_b64encode
 from hashlib import sha256
 from cryptography.fernet import Fernet
+import logging
 from ..models.device import Device
 from ..db import db
-from ..config import Config
+from ..config import Config, is_dev, validate_encryption_key
 from .subscription_service import can_add_device
 
 class DeviceLimitReached(Exception):
@@ -21,25 +22,52 @@ class DeviceLimitReached(Exception):
         self.required_plan_hint = required_plan_hint
         self.upsell = True
 
-def _get_fernet() -> Fernet:
+def _get_fernet() -> Optional[Fernet]:
     """
-    Deriva una clave válida de Fernet a partir de ENCRYPTION_KEY.
-    Si la clave no es Fernet válida, derivamos con SHA-256.
+    Obtiene Fernet a partir de ENCRYPTION_KEY.
+    - Dev: si ENCRYPTION_KEY ausente -> WARNING y passthrough (None).
+    - Dev: si ENCRYPTION_KEY no es válida Fernet -> derivar por SHA-256 (WARNING).
+    - Prod: si ausente o inválida -> excepción clara (Config ya valida en boot; doble guardia aquí).
     """
-    raw = (Config.ENCRYPTION_KEY or "please-change-this-key").encode("utf-8")
-    key = urlsafe_b64encode(sha256(raw).digest())
-    return Fernet(key)
+    key = getattr(Config, "ENCRYPTION_KEY", None)
+    # Ausente
+    if not key:
+        if is_dev():
+            logging.warning("ENCRYPTION_KEY ausente en dev; usando passthrough (NO cifrado). TODO: configura ENCRYPTION_KEY en infra/.env")
+            return None
+        raise RuntimeError("ENCRYPTION_KEY requerida en producción")
+
+    # Válida (Fernet base64 urlsafe 32 bytes)
+    if validate_encryption_key(key):
+        try:
+            return Fernet(key.encode("utf-8"))
+        except Exception:
+            # Si fallara por algún motivo inesperado, tratamos como inválida abajo
+            pass
+
+    # No válida
+    if is_dev():
+        logging.warning("ENCRYPTION_KEY no es una clave Fernet válida; derivando clave (DEV) con SHA-256")
+        derived = urlsafe_b64encode(sha256(key.encode("utf-8")).digest())
+        return Fernet(derived)
+    raise RuntimeError("ENCRYPTION_KEY inválida; debe ser Fernet base64 urlsafe de 32 bytes en producción")
 
 def encrypt_secret(plaintext: str) -> str:
     if plaintext is None:
         return None
     f = _get_fernet()
+    if not f:
+        # Passthrough en dev (NO cifrado). Evita logs de secretos.
+        return plaintext
     return f.encrypt(plaintext.encode("utf-8")).decode("utf-8")
 
 def decrypt_secret(ciphertext: str) -> str:
     if not ciphertext:
         return None
     f = _get_fernet()
+    if not f:
+        # Passthrough en dev: ya almacenado en claro
+        return ciphertext
     return f.decrypt(ciphertext.encode("utf-8")).decode("utf-8")
 
 def list_devices_for_tenant(tenant_id: int) -> List[Device]:

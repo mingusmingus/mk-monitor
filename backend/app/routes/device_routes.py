@@ -9,6 +9,7 @@ from ..models.device import Device
 from ..db import db
 from ..services import alert_service, device_service
 from ..services.device_service import DeviceLimitReached
+from ..__init__ import limiter
 
 device_bp = Blueprint("devices", __name__)
 
@@ -39,6 +40,7 @@ def list_devices():
 
 @device_bp.post("/devices")
 @require_auth(role="admin")
+@limiter.limit("5/minute; 50/hour", override_defaults=False)
 def create_device():
     """
     Crea un dispositivo. Solo admin.

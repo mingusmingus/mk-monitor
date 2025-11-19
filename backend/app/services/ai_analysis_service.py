@@ -6,106 +6,114 @@ Servicio interno de IA con soporte para DeepSeek y heurísticas.
 - Soporta múltiples proveedores: heuristic (local), deepseek (LLM), auto (intenta deepseek, fallback a heuristic).
 """
 import json
-import re
 import logging
-from typing import Dict, Any, List, Optional
-import requests
-from ..config import Config
+from typing import Any, Dict, List, Optional
 
-# Mapeo de variantes de estado a taxonomía canónica
-ESTADO_MAPPING = {
-    "aviso": "Aviso",
-    "alerta menor": "Alerta Menor",
-    "menor": "Alerta Menor",
-    "alerta severa": "Alerta Severa",
-    "severa": "Alerta Severa",
-    "alerta crítica": "Alerta Crítica",
-    "crítica": "Alerta Crítica",
-    "critica": "Alerta Crítica",
+import requests
+
+from ..config import Config
+from ..metrics import inc_ai_requests, inc_ai_fallbacks
+
+
+logger = logging.getLogger(__name__)
+
+
+_SEVERITY_CANONICAL = {
+    "info": "Aviso",
+    "informational": "Aviso",
+    "notice": "Aviso",
+    "low": "Alerta Menor",
+    "minor": "Alerta Menor",
+    "medium": "Alerta Severa",
+    "moderate": "Alerta Severa",
+    "high": "Alerta Crítica",
+    "critical": "Alerta Crítica",
+    "critico": "Alerta Crítica",
 }
 
-VALID_ESTADOS = {"Aviso", "Alerta Menor", "Alerta Severa", "Alerta Crítica"}
-
-
-def normalize_estado(estado: str) -> str:
-    """
-    Normaliza variantes del estado a uno de los 4 valores canónicos.
-    """
-    if not estado:
-        return "Aviso"
-    estado_lower = estado.lower().strip()
-    normalized = ESTADO_MAPPING.get(estado_lower)
-    if normalized:
-        return normalized
-    # Si ya está en formato canónico
-    if estado in VALID_ESTADOS:
-        return estado
-    # Fallback: buscar coincidencia parcial
-    if "crítica" in estado_lower or "critica" in estado_lower:
-        return "Alerta Crítica"
-    if "severa" in estado_lower:
-        return "Alerta Severa"
-    if "menor" in estado_lower:
-        return "Alerta Menor"
-    return "Aviso"
+_DEFAULT_ACTION = "Revisar y mitigar el evento identificado por el análisis de IA."
+_MAX_LOG_LINES = 120
 
 
 def analyze_logs(log_list: List[str], device_context: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """
-    Orquestador principal de análisis de logs.
-    
-    Comportamiento según AI_ANALYSIS_PROVIDER:
-    - "heuristic": usa solo heurísticas locales.
-    - "deepseek": intenta DeepSeek; si falla, raise (el caller decide fallback).
-    - "auto": intenta DeepSeek si hay key; si falla o no hay key, fallback a heurísticas.
-    
-    Args:
-        log_list: Lista de strings de logs crudos.
-        device_context: Opcional, dict con {"name": str, "ip": str} para contexto adicional.
-    
-    Returns:
-        Lista de dicts normalizados:
-        {
-          "estado": "Aviso"|"Alerta Menor"|"Alerta Severa"|"Alerta Crítica",
-          "titulo": str,
-          "descripcion": str,
-          "accion_recomendada": str
-        }
-    """
-    provider = str(Config.AI_ANALYSIS_PROVIDER).lower()
-    
+    """Orquesta el análisis de logs según el proveedor configurado."""
+    provider = str(Config.AI_ANALYSIS_PROVIDER or "auto").lower()
+
     if provider == "heuristic":
         return _analyze_heuristic(log_list)
-    
-    elif provider == "deepseek":
-        # Modo estricto: si falla DeepSeek, propagar error
-        return analyze_with_deepseek(log_list, device_context)
-    
-    elif provider == "auto":
-        # Modo tolerante: intenta DeepSeek, fallback a heurísticas
-        if Config.DEEPSEEK_API_KEY:
-            try:
-                return analyze_with_deepseek(log_list, device_context)
-            except Exception as ex:
-                logging.warning("ai_analysis: DeepSeek falló, fallback a heurísticas: %s", ex)
-                return _analyze_heuristic(log_list)
-        else:
-            logging.info("ai_analysis: DeepSeek no configurado (modo auto), usando heurísticas")
+
+    if provider == "deepseek":
+        if not Config.DEEPSEEK_API_KEY:
+            logger.error("ai_analysis: DeepSeek seleccionado pero falta DEEPSEEK_API_KEY")
+            return []
+        deepseek_input = _prepare_logs_chunk(log_list, device_context)
+        try:
+            # TODO: instrumentar métrica ai_requests_total cuando se agregue observabilidad.
+            alerts_raw = _call_deepseek(deepseek_input)
+            # Métricas: solicitud DeepSeek exitosa
+            inc_ai_requests("deepseek", True)
+            return _normalize_alerts(alerts_raw)
+        except requests.exceptions.Timeout:
+            logger.warning("ai_analysis: DeepSeek timeout tras %ss", Config.AI_TIMEOUT_SEC)
+        except requests.exceptions.HTTPError as http_err:
+            status = http_err.response.status_code if http_err.response else None
+            if status == 429:
+                logger.warning("ai_analysis: DeepSeek respondió 429 (rate limit)")
+            elif status and status >= 500:
+                logger.error("ai_analysis: DeepSeek error servidor %s", status)
+            else:
+                logger.error("ai_analysis: DeepSeek HTTP %s", status or http_err)
+        except ValueError as json_err:
+            logger.error("ai_analysis: DeepSeek JSON inválido: %s", json_err)
+        except requests.exceptions.RequestException as req_err:
+            logger.error("ai_analysis: DeepSeek request error: %s", req_err)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("ai_analysis: DeepSeek error inesperado: %s", exc)
+        # Métricas: solicitud DeepSeek fallida
+        inc_ai_requests("deepseek", False)
+        return []
+
+    if provider == "auto":
+        if not Config.DEEPSEEK_API_KEY:
+            logger.info("ai_analysis: modo auto sin DEEPSEEK_API_KEY, usando heurísticas")
             return _analyze_heuristic(log_list)
-    
-    else:
-        logging.warning("ai_analysis: provider desconocido '%s', fallback a heurísticas", provider)
+
+        deepseek_input = _prepare_logs_chunk(log_list, device_context)
+        try:
+            # TODO: instrumentar métrica ai_requests_total cuando se agregue observabilidad.
+            alerts_raw = _call_deepseek(deepseek_input)
+            # Métricas: solicitud DeepSeek exitosa en modo auto
+            inc_ai_requests("deepseek", True)
+            return _normalize_alerts(alerts_raw)
+        except requests.exceptions.Timeout:
+            logger.warning("ai_analysis: DeepSeek timeout tras %ss (fallback heurístico)", Config.AI_TIMEOUT_SEC)
+        except requests.exceptions.HTTPError as http_err:
+            status = http_err.response.status_code if http_err.response else None
+            if status == 429:
+                logger.warning("ai_analysis: DeepSeek rate limit (429), aplicando heurísticas")
+            elif status and status >= 500:
+                logger.error("ai_analysis: DeepSeek error servidor %s, aplicando heurísticas", status)
+            else:
+                logger.error("ai_analysis: DeepSeek HTTP %s, aplicando heurísticas", status or http_err)
+        except ValueError as json_err:
+            logger.error("ai_analysis: DeepSeek JSON inválido, aplicando heurísticas: %s", json_err)
+        except requests.exceptions.RequestException as req_err:
+            logger.error("ai_analysis: DeepSeek request error, aplicando heurísticas: %s", req_err)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("ai_analysis: DeepSeek error inesperado, aplicando heurísticas: %s", exc)
+
+        # TODO: instrumentar métrica ai_fallbacks_total cuando se agregue observabilidad.
+        # Métricas: solicitud DeepSeek fallida en modo auto y aplicación de fallback
+        inc_ai_requests("deepseek", False)
+        inc_ai_fallbacks("deepseek")
         return _analyze_heuristic(log_list)
+
+    logger.warning("ai_analysis: provider desconocido '%s', fallback a heurísticas", provider)
+    return _analyze_heuristic(log_list)
 
 
 def _analyze_heuristic(log_list: List[str]) -> List[Dict[str, Any]]:
-    """
-    Análisis basado en heurísticas locales (lógica original).
-    
-    Detecta patrones conocidos:
-    - "login failed" -> posible ataque de fuerza bruta
-    - "pppoe reconnect" repetido -> inestabilidad WAN
-    """
+    """Análisis basado en reglas simples sobre los logs."""
     alerts: List[Dict[str, Any]] = []
     txt = "\n".join(log_list).lower()
 
@@ -129,163 +137,120 @@ def _analyze_heuristic(log_list: List[str]) -> List[Dict[str, Any]]:
     return alerts
 
 
-def analyze_with_deepseek(log_list: List[str], device_context: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """
-    Análisis con DeepSeek LLM.
-    
-    Construye un prompt solicitando análisis de logs MikroTik y generación de alertas
-    en formato JSON puro (sin markdown fences).
-    
-    Args:
-        log_list: Lista de logs crudos.
-        device_context: Opcional, dict con {"name": str, "ip": str}.
-    
-    Returns:
-        Lista de alertas normalizadas.
-    
-    Raises:
-        Exception: Si falla la llamada a DeepSeek (timeout, error HTTP, JSON inválido, etc).
-    
-    TODO:
-    - Implementar backoff/retry si 429 (rate limit)
-    - Chunking de logs si excede max_tokens
-    - Deduplicación y correlación de alertas
-    - Caché de respuestas para logs idénticos
-    """
-    if not Config.DEEPSEEK_API_KEY:
-        raise ValueError("analyze_with_deepseek: DEEPSEEK_API_KEY no configurada")
-    
-    # Contexto del dispositivo (opcional)
-    context_str = ""
+def _prepare_logs_chunk(log_list: List[str], device_context: Optional[Dict[str, Any]]) -> List[str]:
+    """Recorta y enriquece los logs antes de enviarlos a DeepSeek."""
+    chunk: List[str] = []
     if device_context:
-        name = device_context.get("name", "Desconocido")
-        ip = device_context.get("ip", "N/A")
-        context_str = f"\nDispositivo: {name} (IP: {ip})"
-    
-    # Limitar número de logs para no exceder tokens
-    # TODO: implementar chunking inteligente si log_list es muy largo
-    max_logs = 100
-    logs_sample = log_list[:max_logs]
-    logs_text = "\n".join(logs_sample)
-    
-    prompt = f"""Eres un experto en análisis de logs de routers MikroTik. Analiza los siguientes logs y genera alertas operativas según la taxonomía:
+        name = device_context.get("name") or "Desconocido"
+        ip_address = device_context.get("ip") or "N/A"
+        chunk.append(f"Device: {name} (IP: {ip_address})")
+    chunk.extend(log_list[:_MAX_LOG_LINES])
+    return chunk
 
-Taxonomía de Estados (obligatoria):
-- "Aviso": Información relevante sin impacto operativo inmediato
-- "Alerta Menor": Problema leve que requiere atención en plazo medio
-- "Alerta Severa": Problema grave que afecta operación y requiere atención urgente
-- "Alerta Crítica": Fallo crítico que compromete servicio, requiere atención inmediata
 
-{context_str}
+def _call_deepseek(logs_chunk: List[str]) -> List[Dict[str, Any]]:
+    """Realiza la llamada HTTP al endpoint de DeepSeek y devuelve la lista cruda de alertas."""
+    if not Config.DEEPSEEK_API_KEY:
+        raise RuntimeError("DeepSeek requiere DEEPSEEK_API_KEY configurada")
 
-Logs a analizar:
-{logs_text}
+    url = Config.DEEPSEEK_API_URL or "https://api.deepseek.com/v1/chat/completions"
+    model = Config.DEEPSEEK_MODEL or "deepseek-chat"
+    timeout = Config.AI_TIMEOUT_SEC or 20
+    max_tokens = Config.AI_MAX_TOKENS or 800
 
-Genera una lista de alertas en formato JSON puro (sin markdown, sin triple backticks). Cada alerta debe tener exactamente estos campos:
-- "estado": uno de los 4 valores exactos de la taxonomía
-- "titulo": descripción breve del problema (máximo 100 caracteres)
-- "descripcion": explicación detallada del problema detectado (máximo 400 caracteres)
-- "accion_recomendada": pasos específicos para resolver el problema (máximo 200 caracteres)
+    logs_text = "\n".join(logs_chunk)
+    prompt = (
+        "Analiza los siguientes logs de equipos MikroTik y detecta posibles incidentes. "
+        "Devuelve SOLO un JSON válido con una lista de objetos en el formato "
+        "[{\"severity_raw\": str, \"message\": str}]. "
+        "La severidad debe ser una de: info, low, medium, high, critical. "
+        "Resume cada evento en menos de 300 caracteres y evita repetir información trivial.\n\n"
+        f"Logs:\n{logs_text}"
+    )
 
-Responde ÚNICAMENTE con el array JSON, sin texto adicional ni fences. Ejemplo de formato esperado:
-[{{"estado": "Alerta Severa", "titulo": "...", "descripcion": "...", "accion_recomendada": "..."}}]
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Eres un analista NOC. Clasifica eventos de routers MikroTik usando severidades "
+                    "info, low, medium, high o critical."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+        "max_tokens": max_tokens,
+    }
 
-Si no detectas problemas, devuelve un array vacío: []"""
-
-    # Preparar request a DeepSeek
     headers = {
         "Authorization": f"Bearer {Config.DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
-    
-    payload = {
-        "model": Config.DEEPSEEK_MODEL,
-        "messages": [
-            {"role": "system", "content": "Eres un experto en análisis de logs de routers MikroTik y generación de alertas operativas."},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.3,  # Baja temperatura para respuestas más deterministas
-        "max_tokens": Config.AI_MAX_TOKENS
-    }
-    
-    try:
-        response = requests.post(
-            Config.DEEPSEEK_API_URL,
-            headers=headers,
-            json=payload,
-            timeout=Config.AI_TIMEOUT_SEC
+
+    response = requests.post(url, headers=headers, json=payload, timeout=timeout)
+
+    if response.status_code == 429:
+        error = requests.exceptions.HTTPError("DeepSeek rate limited", response=response)
+        raise error
+    if 400 <= response.status_code < 600:
+        error = requests.exceptions.HTTPError(
+            f"DeepSeek HTTP {response.status_code}", response=response
         )
-        
-        # Manejo de errores HTTP
-        if response.status_code == 429:
-            # TODO: implementar backoff/retry
-            raise Exception(f"DeepSeek rate limit (429). TODO: implementar backoff.")
-        
-        if not response.ok:
-            error_detail = response.text[:200]
-            raise Exception(f"DeepSeek HTTP {response.status_code}: {error_detail}")
-        
+        raise error
+
+    try:
         data = response.json()
-        
-        # Extraer contenido de la respuesta
-        if "choices" not in data or not data["choices"]:
-            raise Exception("DeepSeek response missing 'choices'")
-        
-        content = data["choices"][0].get("message", {}).get("content", "")
-        if not content:
-            raise Exception("DeepSeek response empty content")
-        
-        # Limpieza robusta: eliminar fences de markdown si los hay
-        content = content.strip()
-        # Remover ```json ... ``` o ``` ... ```
-        content = re.sub(r'^```(?:json)?\s*\n', '', content, flags=re.MULTILINE)
-        content = re.sub(r'\n```\s*$', '', content, flags=re.MULTILINE)
-        content = content.strip()
-        
-        # Parsear JSON
-        try:
-            alerts_raw = json.loads(content)
-        except json.JSONDecodeError as je:
-            logging.error("ai_analysis: JSON decode error. Content: %s", content[:500])
-            raise Exception(f"DeepSeek returned invalid JSON: {je}")
-        
-        # Validar y normalizar estructura
-        if not isinstance(alerts_raw, list):
-            raise Exception(f"DeepSeek response no es una lista: {type(alerts_raw)}")
-        
-        alerts: List[Dict[str, Any]] = []
-        for item in alerts_raw:
-            if not isinstance(item, dict):
-                logging.warning("ai_analysis: item no es dict, skip: %s", item)
-                continue
-            
-            # Validar campos requeridos
-            estado = item.get("estado", "")
-            titulo = item.get("titulo", "")
-            descripcion = item.get("descripcion", "")
-            accion = item.get("accion_recomendada", "")
-            
-            if not all([estado, titulo, descripcion, accion]):
-                logging.warning("ai_analysis: alerta incompleta, skip: %s", item)
-                continue
-            
-            # Normalizar estado a taxonomía canónica
-            estado_normalized = normalize_estado(estado)
-            
-            alerts.append({
-                "estado": estado_normalized,
-                "titulo": str(titulo)[:100],  # Truncar si excede
-                "descripcion": str(descripcion)[:400],
-                "accion_recomendada": str(accion)[:200]
-            })
-        
-        logging.info("ai_analysis: DeepSeek generó %d alertas", len(alerts))
-        return alerts
-        
-    except requests.exceptions.Timeout:
-        raise Exception(f"DeepSeek timeout después de {Config.AI_TIMEOUT_SEC}s")
-    except requests.exceptions.RequestException as e:
-        raise Exception(f"DeepSeek request error: {e}")
-    except Exception as e:
-        # Re-raise con contexto
-        raise Exception(f"analyze_with_deepseek falló: {e}")
+    except json.JSONDecodeError as exc:
+        raise ValueError("DeepSeek respondió con JSON inválido en nivel superior") from exc
+
+    try:
+        content = data["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ValueError("DeepSeek no incluyó contenido en la respuesta") from exc
+
+    # Intentar manejar code fences comunes sin ocultar posibles problemas.
+    if content.startswith("```") and content.endswith("```"):
+        inner = content.strip("`").strip()
+        if inner.lower().startswith("json"):
+            inner = inner[4:].strip()
+        content = inner
+
+    try:
+        alerts_raw = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise ValueError("DeepSeek devolvió JSON de alertas mal formado") from exc
+
+    if not isinstance(alerts_raw, list):
+        raise ValueError("DeepSeek devolvió un payload que no es lista")
+
+    return alerts_raw
+
+
+def _normalize_alerts(alerts_raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Convierte la salida cruda del LLM a la estructura interna estándar."""
+    normalized: List[Dict[str, Any]] = []
+    for idx, item in enumerate(alerts_raw, start=1):
+        if not isinstance(item, dict):
+            logger.debug("ai_analysis: alerta descartada por no ser dict: %s", item)
+            continue
+
+        severity_raw = str(item.get("severity_raw", "")).strip().lower()
+        message = str(item.get("message", "")).strip()
+        if not message:
+            logger.debug("ai_analysis: alerta descartada por mensaje vacío")
+            continue
+
+        estado = _SEVERITY_CANONICAL.get(severity_raw, "Aviso")
+        mensaje = message[:300]
+        titulo = mensaje.split(".", 1)[0][:100] or f"Alerta IA #{idx}"
+
+        normalized.append({
+            "estado": estado,
+            "titulo": titulo,
+            "descripcion": mensaje,
+            "accion_recomendada": _DEFAULT_ACTION,
+        })
+
+    return normalized

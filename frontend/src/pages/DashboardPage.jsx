@@ -44,40 +44,51 @@ export default function DashboardPage() {
   }, [devices])
 
   return (
-    <div className="col gap">
-      <h1>Dashboard</h1>
-      <div className="grid cards-3">
+    <div className="col" style={{ gap: 'var(--spacing-6)' }}>
+      <header>
+        <h1 style={{ fontSize: 'var(--font-2xl)', fontWeight: 600, margin: 0 }}>Dashboard</h1>
+        <p className="muted">Resumen operativo en tiempo real.</p>
+      </header>
+
+      <div className="grid cards-3" style={{ gap: 'var(--spacing-4)' }}>
         <div className="card">
-          <h3>Alertas activas</h3>
-          <div className="kpi">{alerts.length}</div>
+          <h3 className="muted small uppercase">Alertas activas</h3>
+          <div className="kpi" style={{ fontSize: 'var(--font-3xl)', fontWeight: 700 }}>{alerts.length}</div>
         </div>
         <div className="card">
-          <h3>Alertas críticas</h3>
-          <div className="kpi">{criticas}</div>
+          <h3 className="muted small uppercase">Alertas críticas</h3>
+          <div className="kpi" style={{ fontSize: 'var(--font-3xl)', fontWeight: 700, color: 'var(--critical)' }}>
+            {criticas}
+          </div>
         </div>
         <div className="card">
-          <h3>Salud global</h3>
-          <div className="row gap">
+          <h3 className="muted small uppercase">Salud global</h3>
+          <div className="row gap" style={{ marginTop: 'var(--spacing-2)' }}>
             <DeviceHealthIndicator healthStatus={saludGlobal} />
-            {loadingHealth && <span className="muted">Actualizando...</span>}
+            {loadingHealth && <span className="muted small">Actualizando...</span>}
           </div>
         </div>
       </div>
 
       {/* KPI SLA (prioridad BAJA) */}
       <div className="card">
-        <h3>SLA - Tiempo promedio resolución (severas)</h3>
-        <div className="kpi">
+        <h3 className="muted small uppercase">SLA - Tiempo promedio resolución (severas)</h3>
+        <div className="kpi" style={{ fontSize: 'var(--font-2xl)', fontWeight: 600, marginTop: 'var(--spacing-2)' }}>
           {slaMin !== null ? `${slaMin.toFixed(1)} min` : '—'}
         </div>
         {slaMin === null && <div className="muted small">Calculando o sin datos...</div>}
       </div>
 
       <div className="card">
-        <h3>Estado de equipos</h3>
-        <div className="row wrap gap">
+        <h3 style={{ marginBottom: 'var(--spacing-3)' }}>Estado de equipos</h3>
+        <div className="row wrap" style={{ gap: 'var(--spacing-2)' }}>
           {devices.map((d) => (
-            <div key={d.device_id} className="chip">
+            <div key={d.id} className="chip" style={{ 
+              border: '1px solid var(--border)', 
+              padding: '4px 12px', 
+              borderRadius: '99px',
+              background: 'var(--bg-muted)'
+            }}>
               {d.name} <DeviceHealthIndicator healthStatus={d.health_status} />
             </div>
           ))}

@@ -1,8 +1,8 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 
-// Sidebar de navegación del dashboard (simple, profesional).
-export default function Sidebar() {
+// Sidebar de navegación responsive.
+export default function Sidebar({ isOpen, onClose }) {
   const items = [
     { to: '/', label: 'Dashboard' },
     { to: '/devices', label: 'Equipos' },
@@ -10,21 +10,52 @@ export default function Sidebar() {
     { to: '/noc', label: 'NOC' },
     { to: '/subscription', label: 'Suscripción' }
   ]
+
+  // Cerrar con ESC
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (isOpen && e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [isOpen, onClose])
+
   return (
-    <aside className="sidebar">
-      <div className="sidebar-brand">mk-monitor</div>
-      <nav className="sidebar-nav">
-        {items.map((i) => (
-          <NavLink
-            key={i.to}
-            to={i.to}
-            end={i.to === '/'}
-            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+    <>
+      {/* Backdrop oscuro para mobile */}
+      <div 
+        className={`sidebar-backdrop ${isOpen ? 'visible' : ''}`} 
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      
+      <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
+        <div className="row space-between" style={{ marginBottom: 'var(--spacing-3)' }}>
+          <div className="sidebar-brand" style={{ margin: 0 }}>mk-monitor</div>
+          {/* Botón cerrar solo visible en mobile dentro del drawer */}
+          <button 
+            className="btn icon-btn close-sidebar-btn" 
+            onClick={onClose}
+            aria-label="Cerrar menú"
           >
-            {i.label}
-          </NavLink>
-        ))}
-      </nav>
-    </aside>
+            ✕
+          </button>
+        </div>
+
+        <nav className="sidebar-nav">
+          {items.map((i) => (
+            <NavLink
+              key={i.to}
+              to={i.to}
+              end={i.to === '/'}
+              onClick={onClose} // Cierra el drawer al navegar
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+            >
+              {i.label}
+            </NavLink>
+          ))}
+        </nav>
+      </aside>
+    </>
   )
 }

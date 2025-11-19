@@ -27,13 +27,40 @@ Ejecutar:
 
 ## Alembic (migraciones)
 
-Aún no hay migraciones reales. Guía mínima:
-- alembic init migrations
-- Configurar sqlalchemy.url a DATABASE_URL
-- alembic revision -m "init"
-- alembic upgrade head
+Estado: Ya existe migración inicial (`a1b2c3d4e5f6`).
 
-En producción usar Alembic con pipeline CI/CD.
+Comandos principales (desde carpeta del proyecto `mk-monitor/`):
+```bash
+python -m alembic -c backend/alembic.ini revision --autogenerate -m "mensaje"
+python -m alembic -c backend/alembic.ini upgrade head
+python -m alembic -c backend/alembic.ini downgrade -1   # retrocede una migración
+```
+
+Makefile (atajos):
+```bash
+make revision msg="añade campo X"
+make migrate
+```
+
+Variables de conexión:
+- Usa `DATABASE_URL` si está definida.
+- Si no, construye la URI a partir de `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASS`.
+
+Rollback seguro (downgrade):
+- Evita `downgrade` en producción salvo mantenimiento planificado.
+- Algunos cambios (p.ej. pérdida de columnas) implican pérdida de datos irreversible.
+- Estrategia recomendada para revertir en producción:
+  1. Crear migración compensatoria (nueva `revision`) que reestablezca estructura deseada.
+  2. Aplicar esa nueva migración con `upgrade`.
+  3. Mantener backups previos (dump PostgreSQL) automatizados.
+
+Idempotencia en dev:
+- Si las tablas ya existen porque `create_all()` las creó, puedes sincronizar el estado usando:
+  `python -m alembic -c backend/alembic.ini stamp a1b2c3d4e5f6`.
+
+CI:
+- Workflow `.github/workflows/alembic-ci.yml` valida que la migración inicial aplica contra PostgreSQL.
+- Añade tests rápidos tras `upgrade head`.
 
 ## Notas de seguridad
 

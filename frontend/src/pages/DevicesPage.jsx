@@ -3,6 +3,8 @@ import { getDevices, createDevice } from '../api/deviceApi.js'
 import DeviceHealthIndicator from '../components/DeviceHealthIndicator.jsx'
 import UpsellModal from '../components/UpsellModal.jsx'
 import useAuth from '../hooks/useAuth.js'
+import Button from '../components/ui/Button.jsx'
+import TextField from '../components/ui/TextField.jsx'
 
 // Listado y alta de equipos. Si supera límite -> Upsell.
 export default function DevicesPage() {
@@ -60,50 +62,72 @@ export default function DevicesPage() {
   }
 
   return (
-    <div className="col gap">
-      <h1>Dispositivos</h1>
+    <div className="col" style={{ gap: 'var(--spacing-6)' }}>
+      <header>
+        <h1 style={{ fontSize: 'var(--font-2xl)', fontWeight: 600 }}>Dispositivos</h1>
+        <p className="muted">Gestiona tus equipos MikroTik y monitorea su estado.</p>
+      </header>
+
       <div className="card">
-        <form className="row gap" onSubmit={onAdd}>
-          <input
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            placeholder="Nombre"
-            required
-          />
-          <input
-            value={form.ip_address}
-            onChange={(e) => setForm((f) => ({ ...f, ip_address: e.target.value }))}
-            placeholder="IP"
-            required
-          />
-          <input
-            type="number"
-            value={form.port}
-            onChange={(e) => setForm((f) => ({ ...f, port: e.target.value }))}
-            placeholder="Puerto"
-          />
+        <h3 style={{ marginBottom: 'var(--spacing-4)' }}>Nuevo Dispositivo</h3>
+        <form className="row wrap" style={{ gap: 'var(--spacing-3)', alignItems: 'flex-end' }} onSubmit={onAdd}>
+          <div style={{ flex: '1 1 200px' }}>
+            <TextField
+              label="Nombre"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Ej. Router Principal"
+              required
+            />
+          </div>
+          <div style={{ flex: '1 1 140px' }}>
+            <TextField
+              label="IP"
+              value={form.ip_address}
+              onChange={(e) => setForm((f) => ({ ...f, ip_address: e.target.value }))}
+              placeholder="192.168.88.1"
+              required
+            />
+          </div>
+          <div style={{ flex: '0 1 80px' }}>
+            <TextField
+              label="Puerto"
+              type="number"
+              value={form.port}
+              onChange={(e) => setForm((f) => ({ ...f, port: e.target.value }))}
+              placeholder="22"
+            />
+          </div>
           {/* Campos de credenciales (no se muestran luego y no se guardan en cliente) */}
-          <input
-            value={form.username}
-            onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
-            placeholder="Usuario MikroTik"
-            required
-          />
-          <input
-            type="password"
-            value={form.password}
-            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-            placeholder="Password MikroTik"
-            required
-          />
-          <button
-            className="btn btn-primary"
-            type="submit"
-            disabled={isSuspended}
-            title={isSuspended ? 'Acción bloqueada: cuenta suspendida' : undefined}
-          >
-            + Agregar equipo
-          </button>
+          <div style={{ flex: '1 1 140px' }}>
+            <TextField
+              label="Usuario"
+              value={form.username}
+              onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+              placeholder="admin"
+              required
+            />
+          </div>
+          <div style={{ flex: '1 1 140px' }}>
+            <TextField
+              label="Password"
+              type="password"
+              value={form.password}
+              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+              placeholder="••••••"
+              required
+            />
+          </div>
+          <div style={{ paddingBottom: 2 }}>
+            <Button
+              variant="primary"
+              type="submit"
+              disabled={isSuspended}
+              title={isSuspended ? 'Acción bloqueada: cuenta suspendida' : undefined}
+            >
+              + Agregar
+            </Button>
+          </div>
         </form>
         {isSuspended && (
           <div className="muted small mt">
@@ -112,26 +136,29 @@ export default function DevicesPage() {
         )}
       </div>
 
-      <div className="card">
-        <h3>Lista</h3>
-        {loading && <div className="muted">Cargando...</div>}
-        {error && <div className="error">{error}</div>}
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div className="table">
-          <div className="thead row">
+          <div className="thead row" style={{ padding: 'var(--spacing-3) var(--spacing-4)', background: 'var(--bg-muted)' }}>
             <div>Nombre</div>
             <div>IP</div>
             <div>Puerto</div>
             <div>Salud</div>
           </div>
-          {devices.map((d) => (
-            <div key={d.id} className="row">
-              <div>{d.name}</div>
-              <div>{d.ip_address}</div>
-              <div>{d.port}</div>
-              <div><DeviceHealthIndicator healthStatus={d.health_status || 'verde'} /></div>
-            </div>
-          ))}
-          {!devices.length && !loading && <div className="muted">Sin dispositivos.</div>}
+          <div style={{ padding: '0 var(--spacing-4)' }}>
+            {devices.map((d) => (
+              <div key={d.id} className="row" style={{ padding: 'var(--spacing-3) 0' }}>
+                <div style={{ fontWeight: 500 }}>{d.name}</div>
+                <div className="muted">{d.ip_address}</div>
+                <div className="muted">{d.port}</div>
+                <div><DeviceHealthIndicator healthStatus={d.health_status || 'verde'} /></div>
+              </div>
+            ))}
+            {!devices.length && !loading && (
+              <div className="muted" style={{ padding: 'var(--spacing-4) 0' }}>
+                No hay dispositivos registrados.
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

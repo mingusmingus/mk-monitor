@@ -8,8 +8,8 @@ Servicio de monitoreo:
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import logging
+import os
 import time
-import socket
 
 from ..models.device import Device
 from ..models.log_entry import LogEntry
@@ -20,438 +20,353 @@ from .ai_analysis_service import analyze_logs
 from .device_service import decrypt_secret
 
 
-# ============================================================================
-# Helpers de Conexión RouterOS
-# ============================================================================
-
-def _connect_librouteros(ip: str, username: str, password: str, port: int, timeout: int, use_ssl: bool = False) -> tuple:
-    """
-    Conecta usando librouteros (recomendado).
-    
-    Returns:
-        (api_connection, error_message)
-        Si exitoso: (api, None)
-        Si falla: (None, "error description")
-    """
-    try:
-        import librouteros
-    except ImportError:
-        return None, "librouteros no instalado"
-    
-    try:
-        # librouteros.connect acepta timeout y ssl
-        api = librouteros.connect(
-            host=ip,
-            username=username,
-            password=password,
-            port=port,
-            timeout=timeout,
-            ssl_wrapper=use_ssl
-        )
-        return api, None
-    except socket.timeout:
-        return None, f"Timeout conectando a {ip}:{port}"
-    except librouteros.exceptions.TrapError as e:
-        return None, f"Auth failed: {str(e)}"
-    except Exception as e:
-        return None, f"librouteros error: {str(e)}"
+_ROUTEROS_MAX_ATTEMPTS = 2
+_ROUTEROS_RETRY_DELAY_SEC = 0.5
+_DEFAULT_ROUTEROS_PORT = 8728
 
 
-def _connect_routeros_api(ip: str, username: str, password: str, port: int, timeout: int, use_ssl: bool = False) -> tuple:
-    """
-    Conecta usando routeros-api (legacy).
-    
-    Returns:
-        (api_pool, error_message)
-    """
-    try:
-        import routeros_api
-    except ImportError:
-        return None, "routeros-api no instalado"
-    
-    try:
-        pool = routeros_api.RouterOsApiPool(
-            ip,
-            username=username,
-            password=password,
-            port=port,
-            use_ssl=use_ssl,
-            plaintext_login=True,
-            socket_timeout=timeout
-        )
-        api = pool.get_api()
-        return (pool, api), None
-    except socket.timeout:
-        return None, f"Timeout conectando a {ip}:{port}"
-    except Exception as e:
-        return None, f"routeros-api error: {str(e)}"
+def _safe_decode(value: Any) -> Any:
+    """Decodifica bytes a texto UTF-8 sin lanzar excepción."""
+    if isinstance(value, bytes):
+        try:
+            return value.decode("utf-8")
+        except UnicodeDecodeError:
+            return value.decode("latin-1", errors="ignore")
+    return value
 
 
-def _fetch_logs_via_ssh(ip: str, username: str, password: str, port: int, timeout: int, limit: int) -> tuple:
-    """
-    Conecta vía SSH usando paramiko y ejecuta /log/print.
-    
-    Returns:
-        (log_lines, error_message)
-    """
-    try:
-        import paramiko
-    except ImportError:
-        return None, "paramiko no instalado"
-    
-    ssh = None
-    try:
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(
-            ip, 
-            port=port,
-            username=username, 
-            password=password,
-            timeout=timeout,
-            banner_timeout=timeout,
-            auth_timeout=timeout
-        )
-        
-        # Ejecutar comando RouterOS CLI
-        cmd = "/log/print without-paging"
-        _, stdout, stderr = ssh.exec_command(cmd, timeout=timeout)
-        
-        lines = stdout.read().decode(errors="ignore").splitlines()
-        # Limitar desde el final (más recientes)
-        lines = lines[-limit:] if len(lines) > limit else lines
-        
-        return lines, None
-    except socket.timeout:
-        return None, f"SSH timeout a {ip}:{port}"
-    except paramiko.AuthenticationException:
-        return None, f"SSH auth failed para {username}@{ip}"
-    except Exception as e:
-        return None, f"SSH error: {str(e)}"
-    finally:
-        if ssh:
-            try:
-                ssh.close()
-            except:
-                pass
+def _normalize_entry_dict(entry: Any) -> Dict[str, Any]:
+    """Asegura que la entrada del API sea un dict con claves/valores str."""
+    if isinstance(entry, dict):
+        normalized: Dict[str, Any] = {}
+        for key, val in entry.items():
+            key_str = str(_safe_decode(key))
+            normalized[key_str] = _safe_decode(val)
+        return normalized
+    return {"raw": _safe_decode(entry)}
 
 
-def _normalize_log_rows(raw_entries: List[Any], device_id: int, tenant_id: int) -> List[Dict[str, Any]]:
-    """
-    Normaliza respuestas de RouterOS API o SSH a formato estándar.
-    
-    Args:
-        raw_entries: Lista de dicts (API) o strings (SSH)
-        device_id: ID del dispositivo
-        tenant_id: ID del tenant
-    
-    Returns:
-        Lista de dicts normalizados:
-        {
-            "raw_log": str,
-            "timestamp_equipo": datetime | None,
-            "log_level": str | None,
-            "device_id": int,
-            "tenant_id": int
-        }
-    """
-    normalized = []
-    
-    for entry in raw_entries:
-        if isinstance(entry, dict):
-            # Respuesta de RouterOS API (librouteros o routeros-api)
-            msg = entry.get("message") or entry.get("msg") or str(entry)
-            topics = entry.get("topics") or entry.get("topic") or ""
-            time_raw = entry.get("time") or entry.get("timestamp")
-            
-            # TODO: Parsear time_raw que viene en formato RouterOS (ej: "jan/02 12:34:56")
-            # Por ahora, usamos None y dejamos que created_at capture el momento de ingesta
-            timestamp_equipo = None
-            
-            # Extraer nivel de log si viene en topics
-            log_level = None
-            if topics:
-                topics_lower = str(topics).lower()
-                if "error" in topics_lower:
-                    log_level = "error"
-                elif "warning" in topics_lower:
-                    log_level = "warning"
-                elif "info" in topics_lower:
-                    log_level = "info"
-                elif "debug" in topics_lower:
-                    log_level = "debug"
-            
-            raw_log = f"[{topics}] {msg}" if topics else msg
-            
-        elif isinstance(entry, str):
-            # Respuesta de SSH (texto plano)
-            raw_log = entry.strip()
-            timestamp_equipo = None
-            log_level = None
-            
-            # TODO: Intentar parsear timestamp del prefijo del log
-            # Ejemplo: "jan/02 12:34:56 system,info router logged in"
-            
-        else:
+def _entry_timestamp_to_iso(entry: Dict[str, Any]) -> str:
+    """Convierte marcas temporales de RouterOS a ISO8601 (UTC naive)."""
+    now = datetime.utcnow()
+    timestamp_candidates = [
+        str(entry.get(field)).strip()
+        for field in ("timestamp", "time", "ts")
+        if entry.get(field)
+    ]
+    date_value = str(entry.get("date", "")).strip()
+
+    for candidate in timestamp_candidates:
+        cleaned = candidate.replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(cleaned)
+            return parsed.isoformat()
+        except ValueError:
             continue
-        
-        if not raw_log:
-            continue
-        
-        normalized.append({
-            "raw_log": raw_log,
-            "timestamp_equipo": timestamp_equipo,
-            "log_level": log_level,
-            "device_id": device_id,
-            "tenant_id": tenant_id
-        })
-    
-    return normalized
 
-
-def _retry_with_backoff(func, max_retries: int, base_ms: int, *args, **kwargs):
-    """
-    Ejecuta func con reintentos exponenciales.
-    
-    Args:
-        func: Función a ejecutar que devuelve (result, error_msg)
-        max_retries: Número máximo de reintentos
-        base_ms: Backoff base en milisegundos
-    
-    Returns:
-        (result, error_msg) del último intento
-    """
-    for attempt in range(max_retries):
-        result, error = func(*args, **kwargs)
-        
-        if result is not None:
-            return result, None
-        
-        if attempt < max_retries - 1:
-            wait_ms = base_ms * (2 ** attempt)
-            logging.debug(f"Retry {attempt + 1}/{max_retries} después de {wait_ms}ms: {error}")
-            time.sleep(wait_ms / 1000.0)
-    
-    return None, error
-
-
-# ============================================================================
-# Funciones Principales
-# ============================================================================
-
-def get_router_logs(device: Device, since_ts: Optional[datetime] = None) -> List[Dict[str, Any]]:
-    """
-    Obtiene logs del router MikroTik con reintentos y múltiples proveedores.
-    
-    Args:
-        device: Modelo Device con credenciales cifradas
-        since_ts: Opcional, timestamp desde el cual obtener logs (UTC)
-    
-    Returns:
-        Lista normalizada de dicts:
-        {
-            "raw_log": str,
-            "timestamp_equipo": datetime | None,
-            "log_level": str | None,
-            "device_id": int,
-            "tenant_id": int
-        }
-    
-    Lógica de fallback según ROS_PROVIDER:
-    - "librouteros": Solo intenta librouteros
-    - "routeros_api": Solo intenta routeros-api
-    - "ssh": Solo intenta SSH
-    - "auto" (default): Intenta librouteros → routeros-api → SSH
-    
-    Implementa:
-    - Reintentos exponenciales con backoff
-    - Timeouts configurables
-    - Logging estructurado (NO imprime credenciales)
-    - Manejo de errores de red/auth
-    """
-    limit = Config.MONITORING_LOG_LIMIT
-    provider = Config.ROS_PROVIDER.lower()
-    
-    # Descifrar credenciales (NUNCA loguear)
-    username = decrypt_secret(device.username_encrypted)
-    password = decrypt_secret(device.password_encrypted)
-    ip = device.ip_address
-    
-    # Determinar puerto según proveedor
-    # Nota: El modelo Device.port puede usarse para SSH; para API usamos Config.ROS_API_PORT
-    api_port = Config.ROS_API_PORT
-    ssh_port = device.port or Config.ROS_SSH_PORT
-    
-    connect_timeout = Config.ROS_CONNECT_TIMEOUT_SEC
-    command_timeout = Config.ROS_COMMAND_TIMEOUT_SEC
-    use_ssl = Config.ROS_USE_SSL
-    max_retries = Config.ROS_MAX_RETRIES
-    backoff_base = Config.ROS_BACKOFF_BASE_MS
-    
-    collected: List[Dict[str, Any]] = []
-    
-    # ========================================================================
-    # Estrategia de conexión según provider
-    # ========================================================================
-    
-    if provider == "librouteros":
-        # Solo librouteros
-        result, error = _retry_with_backoff(
-            _connect_librouteros,
-            max_retries,
-            backoff_base,
-            ip, username, password, api_port, connect_timeout, use_ssl
-        )
-        
-        if result:
-            api = result
-            try:
-                # Ejecutar /log/print
-                # librouteros usa api.path('/log').select()
-                log_path = api.path('/log')
-                
-                # TODO: Filtrar por since_ts si se proporciona
-                # Ejemplo: log_path.select().where('time', '>', since_ts_formatted)
-                
-                entries = list(log_path.select())
-                # Limitar desde el final (más recientes)
-                entries = entries[-limit:] if len(entries) > limit else entries
-                
-                collected = _normalize_log_rows(entries, device.id, device.tenant_id)
-                logging.info(f"monitoring: librouteros obtuvo {len(collected)} logs de device_id={device.id}")
-            except Exception as e:
-                logging.error(f"monitoring: librouteros query failed device_id={device.id}: {e}")
-            finally:
+    if date_value and timestamp_candidates:
+        for candidate in timestamp_candidates:
+            for fmt in ("%b/%d/%Y %H:%M:%S", "%b/%d/%Y %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
                 try:
-                    api.close()
-                except:
-                    pass
-        else:
-            logging.warning(f"monitoring: librouteros failed device_id={device.id}: {error}")
-    
-    elif provider == "routeros_api":
-        # Solo routeros-api
-        result, error = _retry_with_backoff(
-            _connect_routeros_api,
-            max_retries,
-            backoff_base,
-            ip, username, password, api_port, connect_timeout, use_ssl
-        )
-        
-        if result:
-            pool, api = result
+                    parsed = datetime.strptime(f"{date_value} {candidate}", fmt)
+                    return parsed.isoformat()
+                except ValueError:
+                    continue
+
+    if not date_value and timestamp_candidates:
+        candidate = timestamp_candidates[0]
+        for fmt in ("%b/%d %H:%M:%S", "%H:%M:%S", "%H:%M:%S.%f"):
             try:
-                # routeros-api usa api.get_resource('/log').get()
-                log_resource = api.get_resource('/log')
-                entries = log_resource.get()
-                
-                # Limitar desde el final
-                entries = entries[-limit:] if len(entries) > limit else entries
-                
-                collected = _normalize_log_rows(entries, device.id, device.tenant_id)
-                logging.info(f"monitoring: routeros-api obtuvo {len(collected)} logs de device_id={device.id}")
-            except Exception as e:
-                logging.error(f"monitoring: routeros-api query failed device_id={device.id}: {e}")
-            finally:
+                parsed = datetime.strptime(candidate, fmt)
+                parsed = parsed.replace(year=now.year, month=now.month, day=now.day)
+                return parsed.isoformat()
+            except ValueError:
+                continue
+
+    if date_value:
+        for fmt in ("%b/%d/%Y", "%Y-%m-%d"):
+            try:
+                parsed = datetime.strptime(date_value, fmt)
+                return parsed.isoformat()
+            except ValueError:
+                continue
+
+    return now.isoformat()
+
+
+def _safe_parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
+    """Convierte cadenas ISO8601 en datetime o retorna None si falla."""
+    if not value:
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    candidate = candidate.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(candidate)
+    except ValueError:
+        for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"):
+            try:
+                return datetime.strptime(candidate, fmt)
+            except ValueError:
+                continue
+    return None
+
+
+def _topic_to_log_level(topic: str) -> Optional[str]:
+    if not topic:
+        return None
+    topic_lower = topic.lower()
+    for level in ("error", "warning", "info", "debug"):
+        if level in topic_lower:
+            return level
+    return None
+
+
+def _resolve_routeros_port(device: Device) -> int:
+    for attr in ("ros_api_port", "api_port", "routeros_port", "port"):
+        value = getattr(device, attr, None)
+        if isinstance(value, str) and value.isdigit():
+            value = int(value)
+        if isinstance(value, int) and value > 0:
+            if attr == "port" and value == getattr(Config, "ROS_SSH_PORT", 22):
+                continue
+            return value
+    return getattr(Config, "ROS_API_PORT", _DEFAULT_ROUTEROS_PORT) or _DEFAULT_ROUTEROS_PORT
+
+
+def _resolve_socket_timeout() -> int:
+    raw = os.getenv("MT_TIMEOUT_SEC")
+    if raw:
+        try:
+            timeout = int(raw)
+            return timeout if timeout > 0 else 5
+        except ValueError:
+            logging.warning("monitoring: MT_TIMEOUT_SEC inválido, usando 5s de timeout")
+    return 5
+
+
+def _fetch_router_logs_via_api(device: Device) -> List[Dict[str, Any]]:
+    """Abre una sesión RouterOS API, ejecuta /log/print y transforma la respuesta."""
+    host = getattr(device, "ip_address", None) or getattr(device, "host", None)
+    if not host:
+        logging.warning("monitoring: device_id=%s sin host configurado, omitiendo consulta de logs", device.id)
+        return []
+
+    try:
+        username = decrypt_secret(device.username_encrypted)
+        password = decrypt_secret(device.password_encrypted)
+    except Exception as exc:  # noqa: BLE001
+        logging.error("monitoring: no se pudieron descifrar credenciales device_id=%s: %s", device.id, exc)
+        return []
+
+    try:
+        from routeros_api import RouterOsApiPool
+        from routeros_api.exceptions import (
+            RouterOsApiCommunicationError,
+            RouterOsApiConnectionError,
+            RouterOsApiError,
+        )
+    except ImportError:
+        logging.warning("monitoring: routeros_api no instalado; instala routeros-api para habilitar logs")
+        return []
+
+    port = _resolve_routeros_port(device)
+    timeout = _resolve_socket_timeout()
+
+    formatted_entries: List[Dict[str, Any]] = []
+
+    for attempt in range(1, _ROUTEROS_MAX_ATTEMPTS + 1):
+        pool = None
+        attempt_entries: List[Dict[str, Any]] = []
+        try:
+            pool = RouterOsApiPool(
+                host,
+                username=username,
+                password=password,
+                port=port,
+                plaintext_login=True,
+                use_ssl=False,
+                socket_timeout=timeout,
+            )
+            api = pool.get_api()
+            raw_entries = api.call("/log/print") or []
+            if isinstance(raw_entries, dict):
+                raw_entries = raw_entries.get("ret", [])
+
+            for raw_entry in raw_entries:
+                decoded = _normalize_entry_dict(raw_entry)
+                attempt_entries.append(
+                    {
+                        "timestamp": _entry_timestamp_to_iso(decoded),
+                        "message": str(decoded.get("message") or decoded.get("msg") or "").strip(),
+                        "topic": str(decoded.get("topics") or decoded.get("topic") or "").strip(),
+                        "raw": decoded,
+                    }
+                )
+
+            formatted_entries = attempt_entries
+            logging.debug(
+                "monitoring: routeros_api obtuvo %s logs device_id=%s host=%s",
+                len(formatted_entries),
+                device.id,
+                host,
+            )
+            break
+        except (
+            RouterOsApiCommunicationError,
+            RouterOsApiConnectionError,
+            RouterOsApiError,
+            OSError,
+        ) as exc:  # noqa: PERF203
+            logging.warning(
+                "monitoring: intento %s/%s routeros_api falló device_id=%s host=%s: %s",
+                attempt,
+                _ROUTEROS_MAX_ATTEMPTS,
+                device.id,
+                host,
+                exc,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logging.warning(
+                "monitoring: error inesperado consultando routeros_api device_id=%s host=%s: %s",
+                device.id,
+                host,
+                exc,
+            )
+        finally:
+            if pool:
                 try:
                     pool.disconnect()
-                except:
-                    pass
-        else:
-            logging.warning(f"monitoring: routeros-api failed device_id={device.id}: {error}")
-    
-    elif provider == "ssh":
-        # Solo SSH
-        result, error = _retry_with_backoff(
-            _fetch_logs_via_ssh,
-            max_retries,
-            backoff_base,
-            ip, username, password, ssh_port, command_timeout, limit
-        )
-        
-        if result:
-            lines = result
-            collected = _normalize_log_rows(lines, device.id, device.tenant_id)
-            logging.info(f"monitoring: SSH obtuvo {len(collected)} logs de device_id={device.id}")
-        else:
-            logging.warning(f"monitoring: SSH failed device_id={device.id}: {error}")
-    
-    elif provider == "auto":
-        # Fallback en cascada: librouteros → routeros-api → SSH
-        
-        # Intento 1: librouteros
-        result, error = _retry_with_backoff(
-            _connect_librouteros,
-            max_retries,
-            backoff_base,
-            ip, username, password, api_port, connect_timeout, use_ssl
-        )
-        
-        if result:
-            api = result
-            try:
-                log_path = api.path('/log')
-                entries = list(log_path.select())
-                entries = entries[-limit:] if len(entries) > limit else entries
-                collected = _normalize_log_rows(entries, device.id, device.tenant_id)
-                logging.info(f"monitoring: librouteros (auto) obtuvo {len(collected)} logs de device_id={device.id}")
-            except Exception as e:
-                logging.warning(f"monitoring: librouteros query failed device_id={device.id}: {e}")
-            finally:
-                try:
-                    api.close()
-                except:
-                    pass
-        else:
-            logging.debug(f"monitoring: librouteros (auto) failed device_id={device.id}: {error}, intentando routeros-api")
-        
-        # Intento 2: routeros-api (si librouteros falló)
-        if not collected:
-            result, error = _retry_with_backoff(
-                _connect_routeros_api,
-                max_retries,
-                backoff_base,
-                ip, username, password, api_port, connect_timeout, use_ssl
+                except Exception:  # noqa: BLE001
+                    logging.debug("monitoring: error cerrando pool RouterOS device_id=%s", device.id)
+
+        if formatted_entries:
+            break
+
+        if attempt < _ROUTEROS_MAX_ATTEMPTS:
+            time.sleep(_ROUTEROS_RETRY_DELAY_SEC)
+
+    return formatted_entries
+
+
+def _build_mock_logs(device: Device) -> List[Dict[str, Any]]:
+    now = datetime.utcnow()
+    base_messages = [
+        ("Monitoreo simulado activo", "info"),
+        ("Tráfico de prueba procesado sin errores", "debug"),
+        ("Sin eventos críticos detectados", "info"),
+    ]
+    return [
+        {
+            "raw_log": f"[mock] {message}",
+            "timestamp_equipo": now,
+            "log_level": level,
+            "device_id": device.id,
+            "tenant_id": device.tenant_id,
+        }
+        for message, level in base_messages
+    ]
+
+
+def get_router_logs(device: Device, since_ts: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    """Obtiene logs RouterOS normalizados sin propagar errores.
+
+    Flujo:
+    1. Detecta dispositivos de prueba (`is_mock`/`is_test` o host "dummy") y retorna logs simulados.
+    2. Para dispositivos reales abre una sesión RouterOS API con `routeros_api.RouterOsApiPool`.
+    3. Ejecuta `/log/print`, transforma cada entrada y filtra por `since_ts` cuando es posible.
+    4. Cualquier error de conexión/autenticación se registra a nivel WARNING y la función retorna [].
+
+    Args:
+        device: Dispositivo con credenciales cifradas.
+        since_ts: Timestamp UTC opcional para descartar logs antiguos (si la marca temporal se puede parsear).
+
+    Returns:
+        Lista de dicts listos para persistir en `LogEntry`. Nunca lanza excepciones.
+    """
+    try:
+        if device is None:
+            logging.warning("monitoring: se solicitó get_router_logs con device=None")
+            return []
+
+        host_value = getattr(device, "ip_address", None) or getattr(device, "host", None) or ""
+        mock_flag = bool(getattr(device, "is_mock", False) or getattr(device, "is_test", False))
+        if isinstance(host_value, str) and host_value.lower() == "dummy":
+            mock_flag = True
+
+        if mock_flag:
+            logging.debug("monitoring: devolviendo logs simulados para device_id=%s", device.id)
+            return _build_mock_logs(device)
+
+        raw_entries = _fetch_router_logs_via_api(device)
+        if not raw_entries:
+            return []
+
+        limit = getattr(Config, "MONITORING_LOG_LIMIT", 200) or 200
+        normalized: List[Dict[str, Any]] = []
+
+        for entry in raw_entries:
+            message = entry.get("message") or ""
+            topic = entry.get("topic") or ""
+            raw_data = entry.get("raw")
+
+            raw_text = message.strip()
+            if topic:
+                if raw_text:
+                    raw_text = f"[{topic}] {raw_text}".strip()
+                else:
+                    raw_text = topic.strip()
+
+            if not raw_text:
+                if isinstance(raw_data, dict):
+                    raw_text = str(raw_data).strip()
+                elif raw_data is not None:
+                    raw_text = str(raw_data).strip()
+
+            if not raw_text:
+                continue
+
+            timestamp_iso = entry.get("timestamp")
+            timestamp_dt = _safe_parse_iso_datetime(timestamp_iso)
+
+            include_due_since = True
+            if since_ts and timestamp_dt:
+                include_due_since = timestamp_dt >= since_ts
+
+            if not include_due_since:
+                continue
+
+            normalized.append(
+                {
+                    "raw_log": raw_text,
+                    "timestamp_equipo": timestamp_dt,
+                    "log_level": _topic_to_log_level(topic),
+                    "device_id": device.id,
+                    "tenant_id": device.tenant_id,
+                }
             )
-            
-            if result:
-                pool, api = result
-                try:
-                    log_resource = api.get_resource('/log')
-                    entries = log_resource.get()
-                    entries = entries[-limit:] if len(entries) > limit else entries
-                    collected = _normalize_log_rows(entries, device.id, device.tenant_id)
-                    logging.info(f"monitoring: routeros-api (auto) obtuvo {len(collected)} logs de device_id={device.id}")
-                except Exception as e:
-                    logging.warning(f"monitoring: routeros-api query failed device_id={device.id}: {e}")
-                finally:
-                    try:
-                        pool.disconnect()
-                    except:
-                        pass
-            else:
-                logging.debug(f"monitoring: routeros-api (auto) failed device_id={device.id}: {error}, intentando SSH")
-        
-        # Intento 3: SSH (si ambos API fallaron)
-        if not collected:
-            result, error = _retry_with_backoff(
-                _fetch_logs_via_ssh,
-                max_retries,
-                backoff_base,
-                ip, username, password, ssh_port, command_timeout, limit
+
+        if len(normalized) > limit:
+            normalized = normalized[-limit:]
+
+        if normalized:
+            logging.info(
+                "monitoring: routeros_api obtuvo %s logs device_id=%s",
+                len(normalized),
+                device.id,
             )
-            
-            if result:
-                lines = result
-                collected = _normalize_log_rows(lines, device.id, device.tenant_id)
-                logging.info(f"monitoring: SSH (auto) obtuvo {len(collected)} logs de device_id={device.id}")
-            else:
-                logging.error(f"monitoring: todos los métodos fallaron device_id={device.id}: {error}")
-    
-    else:
-        logging.error(f"monitoring: ROS_PROVIDER desconocido '{provider}', sin conexión device_id={device.id}")
-    
-    return collected
+        else:
+            logging.info(
+                "monitoring: routeros_api retornó entradas sin contenido utilizable device_id=%s",
+                device.id,
+            )
+
+        return normalized
+
+    except Exception as exc:  # noqa: BLE001
+        logging.error("monitoring: error inesperado en get_router_logs device_id=%s: %s", getattr(device, "id", "?"), exc)
+        return []
 
 
 def analyze_and_generate_alerts(device: Device) -> None:

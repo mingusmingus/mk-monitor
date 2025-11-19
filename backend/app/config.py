@@ -80,7 +80,12 @@ class Config:
 
     # Rate limiting (Redis)
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    RATE_LIMITS_DEFAULT = os.getenv("RATE_LIMITS_DEFAULT", "100/minute; 1000/hour")
+    _raw_rate_limits = os.getenv("RATE_LIMITS_DEFAULT", "100/minute,1000/hour")
+    RATE_LIMITS_DEFAULT = [
+        entry.strip()
+        for entry in _raw_rate_limits.replace(";", ",").split(",")
+        if entry.strip()
+    ]
 
 # Helpers de entorno/seguridad
 DEV_ENVS = {"dev", "development"}

@@ -39,7 +39,20 @@ def create_app() -> Flask:
     # CORS: permitir frontend (por ahora orígenes *)
     CORS(app, resources={r"/api/*": {"origins": app.config.get("CORS_ORIGINS", "*")}}, supports_credentials=False)
 
-    # Inicializar DB
+    # IMPORTANTE: importar modelos ANTES de crear tablas en dev.
+    # Esto asegura que db.create_all() conozca todas las entidades.
+    # (En producción se usa Alembic y no depende de esto.)
+    from .models import (  # noqa: F401
+        tenant,
+        user,
+        device,
+        subscription,
+        alert,
+        log_entry,
+        alert_status_history,
+    )
+
+    # Inicializar DB (en dev puede crear tablas si no existen)
     init_db(app)
 
     # Inicializar limiter sobre la app

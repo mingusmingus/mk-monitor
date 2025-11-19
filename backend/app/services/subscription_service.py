@@ -5,11 +5,12 @@ Servicio de suscripciones:
 - Estado de pago del tenant.
 """
 from typing import Tuple, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from ..models.subscription import Subscription
 from ..models.device import Device
 from ..models.tenant import Tenant
 from sqlalchemy import func
+from ..db import db
 
 PLAN_LIMITS: dict[str, Optional[int]] = {
     "BASICMAAT": 5,
@@ -94,3 +95,23 @@ def can_add_device(tenant_id: int) -> Tuple[bool, Optional[Dict[str, Any]]]:
         }
 
     return True, None
+
+def create_initial_subscription(tenant_id: int, plan: str = "BASICMAAT") -> Subscription:
+    """
+    Crea una suscripción inicial para el tenant con límites por plan.
+    - No maneja cobros; deja activo_hasta por defecto a 30 días desde ahora.
+    - Si el plan es inválido, cae en BASICMAAT.
+    """
+    p = (plan or "BASICMAAT").upper()
+    max_devices = PLAN_LIMITS.get(p, PLAN_LIMITS["BASICMAAT"])
+    # Periodo inicial simbólico de 30 días
+    activo_hasta = datetime.utcnow() + timedelta(days=30)
+    sub = Subscription(
+        tenant_id=tenant_id,
+        plan_name=p,
+        max_devices=max_devices if max_devices is not None else 0,  # None no cabe en Integer; usar 0 como 'ilimitado'
+        activo_hasta=activo_hasta,
+    )
+    db.session.add(sub)
+    # commit se realiza en el llamador (transacción envolvente)
+    return sub

@@ -4,8 +4,8 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import './styles/theme.css'
 import './styles/layout.css'
+import { ThemeProvider } from './providers/ThemeProvider.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
-import { ThemeProvider } from './context/ThemeContext.jsx'
 
 // Punto de entrada del frontend (Vite + React).
 createRoot(

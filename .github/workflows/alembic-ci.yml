@@ -1,0 +1,69 @@
+name: Alembic CI
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/alembic-ci.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/alembic-ci.yml'
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: mkmonitor
+          POSTGRES_PASSWORD: mkmonitor
+          POSTGRES_DB: mkmonitor
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U mkmonitor" \
+          --health-interval=5s \
+          --health-timeout=5s \
+          --health-retries=5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          if [ -f backend/requirements-dev.txt ]; then pip install -r backend/requirements-dev.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..10}; do
+            pg_isready -h 127.0.0.1 -U mkmonitor && break || sleep 2;
+          done
+
+      - name: Alembic upgrade (dry run SQL)
+        env:
+          DATABASE_URL: postgresql+psycopg2://mkmonitor:mkmonitor@127.0.0.1:5432/mkmonitor
+        run: |
+          python -m alembic -c backend/alembic.ini upgrade head
+
+      - name: Stamp again (idempotency check)
+        env:
+          DATABASE_URL: postgresql+psycopg2://mkmonitor:mkmonitor@127.0.0.1:5432/mkmonitor
+        run: |
+          python -m alembic -c backend/alembic.ini stamp head
+
+      - name: Run tests (quick health)
+        env:
+          DATABASE_URL: postgresql+psycopg2://mkmonitor:mkmonitor@127.0.0.1:5432/mkmonitor
+          APP_ENV: dev
+        run: |
+          pytest -q || (echo 'Tests fallaron'; exit 1)

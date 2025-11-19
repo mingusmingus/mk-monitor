@@ -55,5 +55,15 @@ export function AuthProvider({ children }) {
     [token, role, tenantStatus, login, logout]
   )
 
+  // Listener para actualización del estado del tenant (403 / 423 en interceptor)
+  useEffect(() => {
+    function handleTenantStatus(e) {
+      const status = e.detail?.status
+      if (status) setTenantStatus(status)
+    }
+    window.addEventListener('tenant:status', handleTenantStatus)
+    return () => window.removeEventListener('tenant:status', handleTenantStatus)
+  }, [])
+
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

@@ -8,7 +8,7 @@ bcrypt
 PyJWT
 cryptography
 requests
-alembic
+alembic==1.14.0
 Flask-Limiter[redis]>=3.5.0
 redis>=5.0.0
 
@@ -16,7 +16,10 @@ redis>=5.0.0
 # Instalar según necesidad: pip install librouteros routeros-api paramiko
 librouteros>=3.2.1        # Recomendado: cliente RouterOS API moderno
 routeros-api>=0.17.0      # Alternativa: cliente RouterOS API legacy
+routeros_api>=0.17.0      # Alias normalizado para import routeros_api
 paramiko>=3.0.0           # Fallback SSH para comandos CLI
 
 # Optional: PDF export (pure Python, sin dependencias nativas)
-reportlab>=4.0.0
+reportlab==4.2.0
+gunicorn>=21.2.0
+pytest==8.3.2

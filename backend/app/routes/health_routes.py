@@ -12,6 +12,18 @@ from ..services import alert_service  # añadido
 
 health_bp = Blueprint("health", __name__)
 
+@health_bp.get("/health")
+def health_check():
+    """
+    Health check público sin autenticación.
+    Útil para monitoreo, balanceadores de carga y Docker healthchecks.
+    """
+    return jsonify({
+        "status": "healthy",
+        "service": "mk-monitor-api",
+        "message": "Backend is running"
+    }), 200
+
 @health_bp.get("/health/devices")
 @require_auth()
 def health_devices():

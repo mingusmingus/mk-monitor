@@ -41,6 +41,7 @@ from app.db import db  # noqa: E402
 from app.models.tenant import Tenant  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.auth.password import hash_password  # noqa: E402
+from app.auth.jwt_utils import create_jwt  # noqa: E402
 
 
 def is_postgres() -> bool:
@@ -81,14 +82,15 @@ def tenant(app):
         t = Tenant(name="Acme Corp", plan="BASICMAAT", status_pago="activo")
         db.session.add(t)
         db.session.commit()
-        return t
+        # Devolver solo el ID para evitar DetachedInstance entre sesiones/contexts
+        return t.id
 
 
 @pytest.fixture
 def admin_user(app, tenant):
     with app.app_context():
         u = User(
-            tenant_id=tenant.id,
+            tenant_id=tenant,
             email="admin@example.com",
             password_hash=hash_password("secret123"),
             role="admin",
@@ -102,7 +104,7 @@ def admin_user(app, tenant):
 def noc_user(app, tenant):
     with app.app_context():
         u = User(
-            tenant_id=tenant.id,
+            tenant_id=tenant,
             email="noc@example.com",
             password_hash=hash_password("secret123"),
             role="noc",
@@ -117,7 +119,13 @@ def auth_token(client, admin_user):
     # Login para obtener token
     res = client.post("/api/auth/login", json={"email": "admin@example.com", "password": "secret123"})
     assert res.status_code == 200, res.get_data(as_text=True)
-    return res.get_json()["token"]
+    # Para compatibilidad con PyJWT>=2.8 (valida que 'sub' sea string), generamos
+    # un token equivalente pero con sub como string explícita.
+    # Esto evita 401 en decorador require_auth por InvalidSubjectError sin tocar producción.
+    token = create_jwt(str(admin_user.id), admin_user.tenant_id, admin_user.role)
+    if isinstance(token, bytes):
+        token = token.decode("utf-8")
+    return token
 
 
 @pytest.fixture

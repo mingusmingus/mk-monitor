@@ -12,7 +12,7 @@ export default function useFetchAlerts(initialFilters = {}) {
   const [error, setError] = useState(null)
   const { token, authReady } = useAuth()
 
-  const fetchAlerts = useCallback(async () => {
+  const fetchAlerts = useCallback(async (signal) => {
     if (!authReady || !token) {
       console.debug('[Hook] useFetchAlerts skip (authReady/token no listos)')
       return
@@ -20,17 +20,25 @@ export default function useFetchAlerts(initialFilters = {}) {
     setLoading(true)
     setError(null)
     try {
-      const res = await getAlerts(filters)
-      setAlerts(res.data || [])
+      const res = await getAlerts(filters, signal)
+      if (!signal?.aborted) {
+        setAlerts(res.data || [])
+      }
     } catch (e) {
-      setError(e)
+      if (e.name !== 'AbortError' && !signal?.aborted) {
+        setError(e)
+      }
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) {
+        setLoading(false)
+      }
     }
   }, [filters, authReady, token])
 
   useEffect(() => {
-    fetchAlerts()
+    const abortController = new AbortController()
+    fetchAlerts(abortController.signal)
+    return () => abortController.abort()
   }, [fetchAlerts])
 
   return { alerts, loading: loading || (!authReady || !token), error, refetch: fetchAlerts, setFilters }

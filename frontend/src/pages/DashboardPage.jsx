@@ -25,25 +25,39 @@ export default function DashboardPage() {
       return
     }
     if (slaLoaded) return
+    
+    const abortController = new AbortController()
     let mounted = true
+    
     ;(async () => {
       try {
         console.debug('[Dashboard] fetching /sla/metrics')
         const r = await fetch(
           `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/sla/metrics`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { 
+            headers: { Authorization: `Bearer ${token}` },
+            signal: abortController.signal
+          }
         )
         if (!r.ok) throw new Error('SLA fetch error')
         const data = await r.json()
-        if (mounted) setSlaMin(data?.tiempo_promedio_resolucion_severa_min ?? null)
+        if (mounted && !abortController.signal.aborted) {
+          setSlaMin(data?.tiempo_promedio_resolucion_severa_min ?? null)
+        }
       } catch (e) {
-        console.warn('[Dashboard] SLA error', e)
+        if (e.name !== 'AbortError' && !abortController.signal.aborted) {
+          console.warn('[Dashboard] SLA error', e)
+        }
       } finally {
-        if (mounted) setSlaLoaded(true)
+        if (mounted && !abortController.signal.aborted) {
+          setSlaLoaded(true)
+        }
       }
     })()
+    
     return () => {
       mounted = false
+      abortController.abort()
     }
   }, [authReady, token, slaLoaded])
 

@@ -40,11 +40,19 @@ function RequireAuth({ children }) {
 function SessionExpiredModal({ onConfirm }) {
   return (
     <div className="modal-overlay">
-      <div className="modal" role="dialog" aria-modal="true">
-        <h2>Sesión expirada</h2>
-        <p>Tu sesión ha expirado. Por favor inicia sesión nuevamente.</p>
+      <div 
+        className="modal" 
+        role="dialog" 
+        aria-modal="true"
+        aria-labelledby="session-expired-title"
+        aria-describedby="session-expired-description"
+      >
+        <h2 id="session-expired-title">Sesión expirada</h2>
+        <p id="session-expired-description">Tu sesión ha expirado. Por favor inicia sesión nuevamente.</p>
         <div className="row" style={{ justifyContent: 'flex-end', gap: 12 }}>
-          <button className="btn" onClick={onConfirm}>Iniciar sesión</button>
+          <button className="btn" onClick={onConfirm} aria-label="Iniciar sesión nuevamente">
+            Iniciar sesión
+          </button>
         </div>
       </div>
     </div>

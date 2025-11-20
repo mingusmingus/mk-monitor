@@ -18,14 +18,18 @@ export default function Header({ onMenuClick }) {
     <>
       {/* Banner de suspensión (ALTA prioridad) */}
       {tenantStatus === 'suspendido' && (
-        <div style={{
-          background: '#7f1d1d',
-          color: '#fff',
-          padding: '12px 16px',
-          textAlign: 'center',
-          fontWeight: '600',
-          borderBottom: '2px solid #991b1b'
-        }}>
+        <div 
+          role="alert"
+          aria-live="polite"
+          style={{
+            background: 'var(--color-critical)',
+            color: 'var(--color-surface)',
+            padding: '12px 16px',
+            textAlign: 'center',
+            fontWeight: '600',
+            borderBottom: '2px solid var(--color-danger)'
+          }}
+        >
           ⚠️ Cuenta suspendida por pagos: modo solo lectura. Contacta soporte para regularizar.
         </div>
       )}

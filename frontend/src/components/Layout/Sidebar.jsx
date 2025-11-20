@@ -42,7 +42,7 @@ export default function Sidebar({ isOpen, onClose }) {
           </button>
         </div>
 
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" role="navigation" aria-label="Navegación principal">
           {items.map((i) => (
             <NavLink
               key={i.to}

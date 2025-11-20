@@ -1,0 +1,178 @@
+/* mk-monitor Design Tokens
+ * Unified CSS variables following --color-* naming convention
+ * Supports both [data-theme="dark"] and [data-theme="light"]
+ */
+
+/* Base tokens (theme-independent) */
+:root {
+  /* Typography */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-base: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 32px;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 40px;
+  --space-8: 48px;
+
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+}
+
+/* Dark theme (baseline) */
+[data-theme="dark"] {
+  /* Background colors */
+  --color-bg: #0E1115;
+  --color-bg-alt: #14181E;
+  --color-surface: #1B2129;
+  --color-surface-alt: #222A33;
+
+  /* Border colors */
+  --color-border: #27313D;
+  --color-border-light: #313D4A;
+
+  /* Text colors */
+  --color-text-primary: #E6EBF1;
+  --color-text-secondary: #A7B2BD;
+  --color-text-muted: #6C7883;
+
+  /* Brand & Interactive */
+  --color-primary: #3D6BFF;
+  --color-primary-hover: #2F56D1;
+  --color-primary-contrast: #FFFFFF;
+
+  /* Status colors */
+  --color-success: #2ECC71;
+  --color-critical: #FF4D4F;
+  --color-severe: #FF914D;
+  --color-minor: #FFD447;
+  --color-info: #3DA8FF;
+  --color-warning: #FFB84D;
+  --color-danger: #FF4D4F;
+
+  /* Utility colors */
+  --color-focus-ring: #528DFF;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.25);
+  --shadow-1: 0 2px 6px rgba(0,0,0,0.35);
+  --shadow-2: 0 4px 12px rgba(0,0,0,0.45);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.55);
+
+  /* Gradients for glassmorphism */
+  --accent-start: #5B8CFF;
+  --accent-end: #89A6FF;
+
+  /* Chip/Badge background */
+  --color-chip: #1F2937;
+}
+
+/* Light theme */
+[data-theme="light"] {
+  /* Background colors */
+  --color-bg: #F5F7FA;
+  --color-bg-alt: #FFFFFF;
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #F0F3F7;
+
+  /* Border colors */
+  --color-border: #DDE3EA;
+  --color-border-light: #E5EBF1;
+
+  /* Text colors */
+  --color-text-primary: #1A2128;
+  --color-text-secondary: #4A5662;
+  --color-text-muted: #7A8692;
+
+  /* Brand & Interactive */
+  --color-primary: #3D6BFF;
+  --color-primary-hover: #2F56D1;
+  --color-primary-contrast: #FFFFFF;
+
+  /* Status colors */
+  --color-success: #2ECC71;
+  --color-critical: #FF4D4F;
+  --color-severe: #FF914D;
+  --color-minor: #FFD447;
+  --color-info: #3DA8FF;
+  --color-warning: #FFB84D;
+  --color-danger: #FF4D4F;
+
+  /* Utility colors */
+  --color-focus-ring: #528DFF;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-1: 0 2px 6px rgba(0,0,0,0.08);
+  --shadow-2: 0 4px 12px rgba(0,0,0,0.12);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.15);
+
+  /* Gradients for glassmorphism */
+  --accent-start: #8AB4FF;
+  --accent-end: #6EA8FE;
+
+  /* Chip/Badge background */
+  --color-chip: #EEF2FF;
+}
+
+/* Legacy token aliases for backward compatibility during migration */
+:root {
+  --bg: var(--color-bg);
+  --bg-muted: var(--color-bg-alt);
+  --card: var(--color-surface);
+  --card-contrast: var(--color-surface-alt);
+  --border: var(--color-border);
+  --text: var(--color-text-primary);
+  --text-muted: var(--color-text-secondary);
+  --primary: var(--color-primary);
+  --primary-contrast: var(--color-primary-contrast);
+  --danger: var(--color-danger);
+  --critical: var(--color-critical);
+  --severe: var(--color-severe);
+  --minor: var(--color-minor);
+  --info: var(--color-info);
+  --chip: var(--color-chip);
+  
+  /* Legacy spacing (maps to new scale) */
+  --spacing-1: var(--space-1);
+  --spacing-2: var(--space-2);
+  --spacing-3: var(--space-3);
+  --spacing-4: var(--space-4);
+  --spacing-5: var(--space-5);
+  --spacing-6: var(--space-6);
+  --spacing-7: var(--space-7);
+  --spacing-8: var(--space-8);
+
+  /* Legacy radius */
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+
+  /* Legacy shadows */
+  --shadow-soft: var(--shadow-1);
+  --shadow-strong: var(--shadow-2);
+
+  /* Legacy font sizes */
+  --font-2xl: var(--font-size-2xl);
+  --font-3xl: var(--font-size-3xl);
+}

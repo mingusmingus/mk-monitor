@@ -33,15 +33,15 @@ export default function LoginPage() {
           maxWidth: 420,
           padding: 24,
           borderRadius: 18,
-          boxShadow: 'var(--shadow-strong)',
+          boxShadow: 'var(--shadow-2)',
           transform: 'translateZ(0)',
           backdropFilter: 'blur(16px) saturate(140%)',
-          background: 'color-mix(in oklab, rgba(15,23,42,0.82) 70%, rgba(15,23,42,0.92) 30%)',
-          color: 'white',
-          border: '1px solid rgba(148,163,184,0.35)',
+          background: 'color-mix(in oklab, var(--color-surface) 82%, var(--color-surface-alt) 92%)',
+          color: 'var(--color-text-primary)',
+          border: '1px solid color-mix(in oklab, var(--color-border) 35%, transparent)',
           position: 'relative',
           overflow: 'hidden',
-          transition: 'transform 150ms ease, box-shadow 200ms ease'
+          transition: 'transform var(--transition-fast), box-shadow var(--transition-base)'
         }}
       >
         <header className="col" style={{ gap: 6, marginBottom: 14 }}>
@@ -200,7 +200,7 @@ function LoginForm({ onSuccess }) {
         <a
           href="#"
           className="small"
-          style={{ textDecoration: 'none', color: 'var(--text-muted)' }}
+          style={{ textDecoration: 'none', color: 'var(--color-text-muted)' }}
           onFocus={(e) => (e.currentTarget.style.textDecoration = 'underline')}
           onBlur={(e) => (e.currentTarget.style.textDecoration = 'none')}
           onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
@@ -215,7 +215,7 @@ function LoginForm({ onSuccess }) {
         <a
           href="/signup"
           className="small"
-          style={{ textDecoration: 'none', color: 'var(--text-muted)' }}
+          style={{ textDecoration: 'none', color: 'var(--color-text-muted)' }}
           onFocus={(e) => (e.currentTarget.style.textDecoration = 'underline')}
           onBlur={(e) => (e.currentTarget.style.textDecoration = 'none')}
           onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
@@ -226,7 +226,7 @@ function LoginForm({ onSuccess }) {
       </div>
 
       {formError && (
-        <div id="login-error" className="small" role="alert" style={{ color: 'var(--danger)', marginTop: 4 }}>
+        <div id="login-error" className="small" role="alert" style={{ color: 'var(--color-danger)', marginTop: 4 }}>
           {formError}
         </div>
       )}

@@ -12,6 +12,7 @@ export default function useDeviceHealth() {
   const { token, authReady } = useAuth()
 
   useEffect(() => {
+    const abortController = new AbortController()
     const load = async () => {
       if (!authReady || !token) {
         console.debug('[Hook] useDeviceHealth skip (authReady/token no listos)')
@@ -20,15 +21,22 @@ export default function useDeviceHealth() {
       setLoading(true)
       setError(null)
       try {
-        const res = await client.get('/health/devices')
-        setDevices(res.data || [])
+        const res = await client.get('/health/devices', { signal: abortController.signal })
+        if (!abortController.signal.aborted) {
+          setDevices(res.data || [])
+        }
       } catch (e) {
-        setError(e)
+        if (e.name !== 'AbortError' && !abortController.signal.aborted) {
+          setError(e)
+        }
       } finally {
-        setLoading(false)
+        if (!abortController.signal.aborted) {
+          setLoading(false)
+        }
       }
     }
     load()
+    return () => abortController.abort()
   }, [authReady, token])
 
   return { devices, loading: loading || (!authReady || !token), error }

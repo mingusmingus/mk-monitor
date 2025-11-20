@@ -35,6 +35,12 @@ export default function LoginPage() {
           borderRadius: 18,
           boxShadow: 'var(--shadow-strong)',
           transform: 'translateZ(0)',
+          backdropFilter: 'blur(16px) saturate(140%)',
+          background: 'color-mix(in oklab, rgba(15,23,42,0.82) 70%, rgba(15,23,42,0.92) 30%)',
+          color: 'white',
+          border: '1px solid rgba(148,163,184,0.35)',
+          position: 'relative',
+          overflow: 'hidden',
           transition: 'transform 150ms ease, box-shadow 200ms ease'
         }}
       >
@@ -50,28 +56,47 @@ export default function LoginPage() {
 }
 
 function getErrorMessage(err) {
-  // Mapea errores HTTP/axios a mensajes amigables
   const status = err?.response?.status
-  if (status === 401) return { message: 'Email o contraseña inválidos.', target: 'password' }
-  if (status === 429) {
-    const retryAfter = err?.response?.headers?.['retry-after'] || err?.response?.data?.retry_after
-    const hint = retryAfter ? ` Intenta de nuevo en ${retryAfter} segundos.` : ''
-    return { message: `Demasiados intentos. Intenta de nuevo en unos minutos.${hint}`, target: 'password' }
+  const code = err?.response?.data?.error
+
+  if (status === 409 && code === 'email_taken') {
+    return { message: 'Este email ya está registrado.', target: 'email' }
   }
+  if (status === 400 && code === 'invalid_email') {
+    return { message: 'El email no tiene un formato válido.', target: 'email' }
+  }
+  if (status === 400 && code === 'email_required') {
+    return { message: 'El email es obligatorio.', target: 'email' }
+  }
+  if (status === 400 && code === 'weak_password') {
+    return { message: 'La contraseña debe tener al menos 8 caracteres.', target: 'password' }
+  }
+  if (status === 429) {
+    return { message: 'Demasiados intentos. Intenta nuevamente más tarde.', target: 'form' }
+  }
+
   // Network o 5xx
-  if (!status || status >= 500) return { message: 'No pudimos conectarnos. Reintenta en unos segundos.', target: 'form' }
-  // Otro
-  return { message: 'Ocurrió un error. Intenta más tarde.', target: 'form' }
+  if (!status || status >= 500) {
+    return { message: 'Error interno. Reintenta en unos segundos.', target: 'form' }
+  }
+
+  return { message: 'Ocurrió un error al registrar tu cuenta.', target: 'form' }
 }
 
 function LoginForm({ onSuccess }) {
   const { login } = useAuth()
+  const location = useLocation()
 
   const emailRef = useRef(null)
   const passwordRef = useRef(null)
   const submitRef = useRef(null)
 
-  const [email, setEmail] = useState(() => localStorage.getItem('remember_email') || '')
+  // Prefill: si venimos de signup con state.prefillEmail, usarlo; si no, usar remember_email
+  const [email, setEmail] = useState(() => {
+    const prefill = location.state?.prefillEmail
+    if (prefill) return prefill
+    return localStorage.getItem('remember_email') || ''
+  })
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(() => !!localStorage.getItem('remember_email'))
 
@@ -80,7 +105,10 @@ function LoginForm({ onSuccess }) {
   const [fieldErrors, setFieldErrors] = useState({ email: '', password: '' })
 
   const emailValid = useMemo(() => !email || /.+@.+\..+/.test(email), [email])
-  const canSubmit = useMemo(() => email && password && emailValid && !submitting, [email, password, emailValid, submitting])
+  const canSubmit = useMemo(
+    () => email && password && emailValid && !submitting,
+    [email, password, emailValid, submitting]
+  )
 
   useEffect(() => {
     // Limpiar errores por cambios
@@ -106,11 +134,12 @@ function LoginForm({ onSuccess }) {
     setFormError('')
     setFieldErrors({ email: '', password: '' })
     try {
-      await login(email, password)
-      // remember me
-      if (remember) localStorage.setItem('remember_email', email)
-      else localStorage.removeItem('remember_email')
-      onSuccess?.()
+      const ok = await login(email, password)
+      if (ok) {
+        await new Promise(resolve => setTimeout(resolve, 0))
+        onSuccess?.()
+        return
+      }
     } catch (err) {
       const { message, target } = getErrorMessage(err)
       // Para 401, marcar password como error
@@ -126,7 +155,12 @@ function LoginForm({ onSuccess }) {
   }, [email, password, remember, login, onSuccess, emailValid, focusTarget])
 
   return (
-    <form onSubmit={handleSubmit} className="col" style={{ gap: 12 }} aria-describedby={formError ? 'login-error' : undefined}>
+    <form
+      onSubmit={handleSubmit}
+      className="col"
+      style={{ gap: 12 }}
+      aria-describedby={formError ? 'login-error' : undefined}
+    >
       <TextField
         label="Email"
         type="email"
@@ -163,11 +197,14 @@ function LoginForm({ onSuccess }) {
           />
           <span className="small">Recordarme</span>
         </label>
-        <a href="#" className="small" style={{ textDecoration: 'none', color: 'var(--text-muted)' }}
-           onFocus={(e) => (e.currentTarget.style.textDecoration = 'underline')}
-           onBlur={(e) => (e.currentTarget.style.textDecoration = 'none')}
-           onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
-           onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
+        <a
+          href="#"
+          className="small"
+          style={{ textDecoration: 'none', color: 'var(--text-muted)' }}
+          onFocus={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+          onBlur={(e) => (e.currentTarget.style.textDecoration = 'none')}
+          onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+          onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
         >
           ¿Olvidaste tu contraseña?
         </a>

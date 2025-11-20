@@ -15,6 +15,9 @@ function getErrorMessage(err) {
   if (status === 400 && code === 'invalid_email') {
     return { message: 'El email no tiene un formato válido.', target: 'email' }
   }
+  if (status === 400 && code === 'email_required') {
+    return { message: 'El email es obligatorio.', target: 'email' }
+  }
   if (status === 400 && code === 'weak_password') {
     return { message: 'La contraseña debe tener al menos 8 caracteres.', target: 'password' }
   } 
@@ -24,7 +27,7 @@ function getErrorMessage(err) {
 
   // Network o 5xx
   if (!status || status >= 500) {
-    return { message: 'No pudimos completar el registro. Reintenta en unos segundos.', target: 'form' }
+    return { message: 'Error interno. Reintenta en unos segundos.', target: 'form' }
   }
 
   return { message: 'Ocurrió un error al registrar tu cuenta.', target: 'form' }
@@ -132,7 +135,7 @@ export default function SignupPage() {
           setError('Este email ya está registrado.')
           focusFirstErrorField('email')
         } else if (status === 429) {
-          setError('Demasiadas solicitudes. Intenta más tarde.')
+          setError('Demasiados solicitudes. Intenta más tarde.')
         } else {
           setError('Ocurrió un error al registrar tu cuenta.')
         }
@@ -142,7 +145,7 @@ export default function SignupPage() {
           setError('Este email ya está registrado.')
           focusFirstErrorField('email')
         } else if (status === 429) {
-          setError('Demasiadas solicitudes. Intenta más tarde.')
+          setError('Demasiados solicitudes. Intenta más tarde.')
         } else {
           setError('Ocurrió un error al registrar tu cuenta.')
         }

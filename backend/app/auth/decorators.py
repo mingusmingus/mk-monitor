@@ -1,40 +1,66 @@
 """
 Decoradores de autorización:
 
-- @jwt_required: exige token JWT válido.
-- @role_required("admin"|"noc"): controla acceso por rol.
-- @tenant_required: asegura que el recurso consultado pertenece al tenant del token.
-Nota: Implementaciones mínimas a completar cuando se creen endpoints.
+- require_auth(role=None): exige token JWT válido y opcionalmente rol.
 """
 from functools import wraps
 from flask import request, jsonify, g
 from .jwt_utils import decode_jwt
+from .errors import AuthTokenExpired, AuthTokenInvalid
+import logging
+
+logger = logging.getLogger(__name__)
 
 def require_auth(role: str | None = None):
     """
     Decorador para proteger endpoints con JWT.
-    - Lee Authorization: Bearer <token>
+    - Lee Authorization Bearer <token>
     - Decodifica y adjunta g.user_id, g.tenant_id, g.role
     - Si role está definido, valida autorización (403 si no cumple)
+    Respuestas 401 incluyen razón estructurada:
+      {"error":"unauthorized","reason":"missing_header|malformed|decode_error|expired"}
     """
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
             auth_header = request.headers.get("Authorization", "")
+            if not auth_header:
+                logger.warning("[AUTH] AUTH 401: missing Authorization header")
+                return jsonify({"error": "unauthorized", "reason": "missing_header"}), 401
             if not auth_header.startswith("Bearer "):
-                return jsonify({"error": "Unauthorized"}), 401
+                logger.warning("[AUTH] AUTH 401: malformed header value=%s", auth_header[:32])
+                return jsonify({"error": "unauthorized", "reason": "malformed"}), 401
             token = auth_header.split(" ", 1)[1].strip()
+            if not token:
+                logger.warning("[AUTH] AUTH 401: empty token after Bearer")
+                return jsonify({"error": "unauthorized", "reason": "malformed"}), 401
             try:
                 claims = decode_jwt(token)
-            except Exception:
-                return jsonify({"error": "Invalid or expired token"}), 401
+            except AuthTokenExpired:
+                logger.warning("[AUTH] AUTH 401: token expirado")
+                return jsonify({"error": "unauthorized", "reason": "expired", "message": "Token expirado"}), 401
+            except AuthTokenInvalid:
+                logger.warning("[AUTH] AUTH 401: token inválido")
+                return jsonify({"error": "unauthorized", "reason": "invalid", "message": "Token inválido"}), 401
 
-            g.user_id = claims.get("sub")
-            g.tenant_id = claims.get("tenant_id")
-            g.role = claims.get("role")
+            user_id = claims.get("sub")
+            tenant_id = claims.get("tenant_id")
+            role_claim = claims.get("role")
+
+            if user_id is None or tenant_id is None or role_claim is None:
+                logger.warning("[AUTH] AUTH 401: token sin claims esenciales (sub/tenant_id/role)")
+                return jsonify({"error": "unauthorized", "reason": "missing_claims"}), 401
+
+            try:
+                g.user_id = int(user_id)
+            except (TypeError, ValueError):
+                g.user_id = user_id
+            g.tenant_id = tenant_id
+            g.role = role_claim
 
             if role is not None and g.role != role:
-                return jsonify({"error": "Forbidden"}), 403
+                logger.warning("[AUTH] AUTH 403: role mismatch required=%s got=%s", role, g.role)
+                return jsonify({"error": "forbidden", "reason": "role_mismatch"}), 403
 
             return fn(*args, **kwargs)
         return wrapper

@@ -46,6 +46,7 @@ def get_current_subscription(tenant_id: int) -> Dict[str, Any]:
     _now = datetime.utcnow()
     sub = (Subscription.query
            .filter(Subscription.tenant_id == tenant_id)
+           .filter((Subscription.activo_hasta == None) | (Subscription.activo_hasta >= _now))  # noqa: E711
            .order_by(Subscription.activo_hasta.desc().nullslast())
            .first())
 
@@ -85,14 +86,23 @@ def can_add_device(tenant_id: int) -> Tuple[bool, Optional[Dict[str, Any]]]:
         plan = info["plan_name"]
         # Sugerencia de upgrade
         if plan == "BASICMAAT":
-            hint = "INTERMAAT o PROMAAT"
+            return False, {
+                "upsell": True,
+                "message": "Has alcanzado el límite de 5 dispositivos de BASICMAAT.",
+                "required_plan_hint": "Actualiza a INTERMAAT (hasta 15 dispositivos)."
+            }
+        elif plan == "INTERMAAT":
+            return False, {
+                "upsell": True,
+                "message": "Has alcanzado el límite de 15 dispositivos de INTERMAAT.",
+                "required_plan_hint": "Actualiza a PROMAAT (dispositivos ilimitados)."
+            }
         else:
-            hint = "PROMAAT"
-        return False, {
-            "upsell": True,
-            "message": f"Has alcanzado el límite de tu plan ({used}/{max_devices}).",
-            "required_plan_hint": hint
-        }
+            return False, {
+                "upsell": True,
+                "message": "Límite de dispositivos alcanzado.",
+                "required_plan_hint": "Contacta soporte para ampliar tu plan."
+            }
 
     return True, None
 

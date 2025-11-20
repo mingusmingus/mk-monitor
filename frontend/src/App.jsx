@@ -9,13 +9,12 @@ import SubscriptionPage from './pages/SubscriptionPage.jsx'
 import NocActivityPage from './pages/NocActivityPage.jsx'
 import Sidebar from './components/Layout/Sidebar.jsx'
 import Header from './components/Layout/Header.jsx'
-import useAuth from './hooks/useAuth';
+import useAuth from './hooks/useAuth'
 import SignupPage from './pages/SignupPage.jsx'
 
 // Envoltura de layout para páginas protegidas
 function ProtectedLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-
   return (
     <div className="app">
       <Header onMenuClick={() => setMobileMenuOpen(true)} />
@@ -29,7 +28,7 @@ function ProtectedLayout() {
   )
 }
 
-// Requiere un token para permitir acceso. TODO: refinar por roles.
+// Requiere un token para permitir acceso.
 function RequireAuth({ children }) {
   const { token } = useAuth()
   const location = useLocation()
@@ -37,45 +36,65 @@ function RequireAuth({ children }) {
   return children
 }
 
+// Modal de sesión expirada
+function SessionExpiredModal({ onConfirm }) {
+  return (
+    <div className="modal-overlay">
+      <div className="modal" role="dialog" aria-modal="true">
+        <h2>Sesión expirada</h2>
+        <p>Tu sesión ha expirado. Por favor inicia sesión nuevamente.</p>
+        <div className="row" style={{ justifyContent: 'flex-end', gap: 12 }}>
+          <button className="btn" onClick={onConfirm}>Iniciar sesión</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const navigate = useNavigate()
-  const { logout } = useAuth()
+  const { logout, expiredSession } = useAuth()
 
-  // Listener global para eventos de logout disparados por el interceptor (401)
+  // Listener legacy (otros motivos de logout forzado)
   useEffect(() => {
     function handleLogout(e) {
       const reason = e.detail?.reason
       logout()
       if (window.location.pathname !== '/login') {
         navigate('/login', { replace: true, state: { reason } })
-        // Mensaje simple; idealmente reemplazar por sistema de toast centralizado
-        alert('Tu sesión expiró.')
       }
     }
     window.addEventListener('auth:logout', handleLogout)
     return () => window.removeEventListener('auth:logout', handleLogout)
   }, [logout, navigate])
 
+  const onExpiredConfirm = () => {
+    logout()
+    navigate('/login', { replace: true })
+  }
+
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      {/* Nueva ruta pública de registro */}
-      <Route path="/signup" element={<SignupPage />} />
-      <Route
-        element={
-          <RequireAuth>
-            <ProtectedLayout />
-          </RequireAuth>
-        }
-      >
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/devices" element={<DevicesPage />} />
-        <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
-        <Route path="/alerts" element={<AlertsPage />} />
-        <Route path="/subscription" element={<SubscriptionPage />} />
-        <Route path="/noc" element={<NocActivityPage />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      {expiredSession && <SessionExpiredModal onConfirm={onExpiredConfirm} />}
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route
+          element={
+            <RequireAuth>
+              <ProtectedLayout />
+            </RequireAuth>
+          }
+        >
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/devices" element={<DevicesPage />} />
+          <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
+          <Route path="/alerts" element={<AlertsPage />} />
+          <Route path="/subscription" element={<SubscriptionPage />} />
+          <Route path="/noc" element={<NocActivityPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
   )
 }

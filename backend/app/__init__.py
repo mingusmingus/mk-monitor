@@ -9,28 +9,47 @@ from flask import Flask, g, jsonify
 from flask_cors import CORS
 from .config import Config
 from .db import init_db
-# Rate limiting (Flask-Limiter + Redis)
+# Rate limiting (Flask-Limiter + Redis o memoria)
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_limiter.errors import RateLimitExceeded
 import logging
+import os
+
 
 def _rate_limit_key():
     """
-    Clave de rate limit:
-    - Si hay autenticación, usar tenant:<tenant_id>
-    - Si no, usar IP remota.
+    Clave de rate limit utilizada solo para logging en el manejador de errores.
+    Nota: El Limiter se inicializa con get_remote_address como key_func.
     """
     tid = getattr(g, "tenant_id", None)
     return f"tenant:{tid}" if tid else get_remote_address()
 
-# Instancia global para usar en decoradores de rutas
+
+# Determinar almacenamiento del rate limiter:
+# - DEV/TEST o REDIS_URL vacío → memory://
+# - PROD con REDIS_URL presente → Redis
+_APP_ENV = (os.getenv("APP_ENV") or "dev").lower()
+_REDIS_URL = (os.getenv("REDIS_URL") or "").strip()
+_USE_MEMORY = _APP_ENV in {"dev", "development", "test"} or not _REDIS_URL
+_STORAGE_URI = "memory://" if _USE_MEMORY else _REDIS_URL
+
+if _USE_MEMORY:
+    logging.warning(
+        "RateLimiter: usando almacenamiento en memoria (APP_ENV=%s, REDIS_URL=%r).",
+        _APP_ENV,
+        _REDIS_URL or "<empty>",
+    )
+
+# Instancia global para usar en decoradores de rutas.
+# Se completa con init_app(app) dentro de create_app().
 limiter = Limiter(
-    key_func=_rate_limit_key,
-    storage_uri=Config.REDIS_URL,
-    default_limits=Config.RATE_LIMITS_DEFAULT,
+    key_func=get_remote_address,
+    storage_uri=_STORAGE_URI,
+    default_limits=[],          # sin límites globales por defecto
     headers_enabled=True,
 )
+
 
 def create_app() -> Flask:
     app = Flask(__name__)
@@ -88,8 +107,7 @@ def create_app() -> Flask:
     app.register_blueprint(health_bp, url_prefix="/api")
     app.register_blueprint(sla_bp, url_prefix="/api")
 
-    # Excluir rutas de métricas y estáticos del rate limit
-    # (ajusta si tienes /metrics real; aquí exime todo el blueprint SLA por ejemplo)
+    # Excluir rutas de métricas y estáticos del rate limit (si aplica)
     limiter.exempt(sla_bp)
     if app.view_functions.get("static"):
         limiter.exempt(app.view_functions["static"])

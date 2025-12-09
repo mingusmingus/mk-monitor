@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import TextField from '../components/ui/TextField.jsx'
 import PasswordField from '../components/ui/PasswordField.jsx'
@@ -157,23 +157,14 @@ export default function SignupPage() {
   )
 
   return (
-    <div className="centered" style={{ minHeight: '100vh' }}>
-      <div
-        className="glass"
-        style={{
-          width: '100%',
-          maxWidth: 420,
-          padding: 24,
-          borderRadius: 18,
-          boxShadow: 'var(--shadow-strong)'
-        }}
-      >
-        <header className="col" style={{ gap: 6, marginBottom: 14 }}>
-          <h1 style={{ fontSize: 28, lineHeight: 1.2, margin: 0, fontWeight: 600 }}>Crear cuenta</h1>
-          <p className="muted" style={{ margin: 0 }}>Crea tu tenant y el usuario administrador.</p>
+    <div className="auth-bg centered">
+      <div className="glass-panel fade-in auth-container">
+        <header className="col gap-2 mb-4">
+          <h1 className="h1 text-center">Crear cuenta</h1>
+          <p className="muted small text-center">Crea tu tenant y el usuario administrador.</p>
         </header>
 
-        <form onSubmit={handleSubmit} className="col" style={{ gap: 12 }}>
+        <form onSubmit={handleSubmit} className="col gap-3">
           <TextField
             label="Email"
             type="email"
@@ -224,13 +215,13 @@ export default function SignupPage() {
             required
           />
           {error && (
-            <div className="small" role="alert" style={{ color: 'var(--danger)', marginTop: 4 }}>
+            <div className="small mt-1 text-danger" role="alert">
               {error}
             </div>
           )}
 
           {success && (
-            <div className="small" role="status" style={{ color: 'var(--success)', marginTop: 4 }}>
+            <div className="small mt-1 text-success" role="status">
               {success}
             </div>
           )}
@@ -241,17 +232,17 @@ export default function SignupPage() {
             loading={loading}
             disabled={!canSubmit || loading}
             fullWidth
+            className="mt-2"
           >
             {loading ? 'Creando cuenta…' : 'Crear cuenta'}
           </Button>
 
-          <div className="row" style={{ justifyContent: 'flex-end', marginTop: 4 }}>
+          <div className="row justify-end mt-1">
             <a
               href="/login"
-              className="small"
-              style={{ textDecoration: 'none', color: 'var(--text-muted)' }}
+              className="small muted no-decoration"
             >
-              ¿Ya tienes cuenta? Inicia sesión
+              ¿Ya tienes cuenta? <span className="bold text-primary">Inicia sesión</span>
             </a>
           </div>
         </form>

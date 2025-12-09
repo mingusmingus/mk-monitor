@@ -25,15 +25,15 @@ export default function AlertsPage() {
   }
 
   return (
-    <div className="col" style={{ gap: 'var(--spacing-6)' }}>
-      <header className="row space-between wrap">
-        <h1 style={{ fontSize: 'var(--font-2xl)', fontWeight: 600, margin: 0 }}>Alertas</h1>
+    <div className="col gap-6">
+      <header className="row justify-between wrap">
+        <h1 className="h1">Alertas</h1>
         <Button onClick={refetch} variant="secondary" size="sm">Actualizar</Button>
       </header>
 
       <div className="card">
-        <div className="row wrap" style={{ gap: 'var(--spacing-3)', alignItems: 'flex-end' }}>
-          <div className="col" style={{ gap: 4 }}>
+        <div className="row wrap gap-3" style={{ alignItems: 'flex-end' }}>
+          <div className="col gap-1">
             <label className="small muted">Severidad</label>
             <select
               className="input"
@@ -58,7 +58,7 @@ export default function AlertsPage() {
             />
           </div>
 
-          <div className="col" style={{ gap: 4 }}>
+          <div className="col gap-1">
             <label className="small muted">Estado Operativo</label>
             <select
               className="input"
@@ -78,17 +78,17 @@ export default function AlertsPage() {
           </div>
         </div>
         {isSuspended && (
-          <div className="muted small mt">
+          <div className="muted small mt-2">
             ℹ️ Modo solo lectura: no puedes cambiar el estado de alertas mientras la cuenta esté suspendida.
           </div>
         )}
       </div>
 
-      <div className="col" style={{ gap: 'var(--spacing-3)' }}>
+      <div className="col gap-3">
         {loading && <div className="muted">Cargando alertas...</div>}
-        {error && <div className="error">{String(error)}</div>}
+        {error && <div className="text-danger">{String(error)}</div>}
         {!loading && !alerts.length && (
-          <div className="card muted" style={{ textAlign: 'center', padding: 'var(--spacing-8)' }}>
+          <div className="card muted text-center p-6">
             Sin resultados para los filtros actuales.
           </div>
         )}

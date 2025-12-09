@@ -43,8 +43,8 @@ function SessionExpiredModal({ onConfirm }) {
       <div className="modal" role="dialog" aria-modal="true">
         <h2>Sesión expirada</h2>
         <p>Tu sesión ha expirado. Por favor inicia sesión nuevamente.</p>
-        <div className="row" style={{ justifyContent: 'flex-end', gap: 12 }}>
-          <button className="btn" onClick={onConfirm}>Iniciar sesión</button>
+        <div className="row justify-end gap-3">
+          <button className="btn btn-primary" onClick={onConfirm}>Iniciar sesión</button>
         </div>
       </div>
     </div>

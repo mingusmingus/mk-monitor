@@ -30,30 +30,20 @@ const Input = forwardRef(function Input(
 ) {
   const showAdornment = loading || endAdornment
   return (
-    <div className="row" style={{ position: 'relative', width: '100%' }}>
+    <div className="input-wrapper row" style={style?.wrapper}>
       <input
         ref={ref}
         className={['input', className].filter(Boolean).join(' ')}
         aria-invalid={!!error || undefined}
         style={{
-          width: '100%',
           paddingRight: showAdornment ? 36 : undefined,
           borderColor: error ? 'var(--danger)' : undefined,
-          ...style
+          ...(style?.input || {})
         }}
         {...props}
       />
       {showAdornment && (
-        <div
-          style={{
-            position: 'absolute',
-            right: 8,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            display: 'grid',
-            placeItems: 'center'
-          }}
-        >
+        <div className="input-adornment">
           {loading ? <Spinner /> : endAdornment}
         </div>
       )}
@@ -62,10 +52,3 @@ const Input = forwardRef(function Input(
 })
 
 export default Input
-/* Ejemplo de uso (solo documentación, no incluir en build)
-// import Input from '@/components/ui/Input.jsx'
-// function Example() {
-//   const [v, setV] = React.useState('')
-//   return <Input placeholder="Escribe aquí" value={v} onChange={(e) => setV(e.target.value)} />
-// }
-*/

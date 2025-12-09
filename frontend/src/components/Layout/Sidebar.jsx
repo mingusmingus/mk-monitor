@@ -30,11 +30,11 @@ export default function Sidebar({ isOpen, onClose }) {
       />
       
       <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
-        <div className="row space-between" style={{ marginBottom: 'var(--spacing-3)' }}>
-          <div className="sidebar-brand" style={{ margin: 0 }}>mk-monitor</div>
+        <div className="row justify-between items-center mb-4">
+          <div className="sidebar-brand mb-0">mk-monitor</div>
           {/* Botón cerrar solo visible en mobile dentro del drawer */}
           <button 
-            className="btn icon-btn close-sidebar-btn" 
+            className="icon-btn close-sidebar-btn"
             onClick={onClose}
             aria-label="Cerrar menú"
           >

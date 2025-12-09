@@ -17,36 +17,11 @@ export default function LoginPage() {
   }, [from, navigate])
 
   return (
-    <div
-      className="centered"
-      style={{
-        minHeight: '100vh',
-        // Gradiente suave usando tokens
-        background: `radial-gradient(1200px 600px at 20% -10%, var(--accent-start) 0%, transparent 50%), radial-gradient(1200px 600px at 120% 110%, var(--accent-end) 0%, transparent 50%), linear-gradient(135deg, color-mix(in oklab, var(--accent-start) 18%, var(--bg)), color-mix(in oklab, var(--accent-end) 18%, var(--bg)))`,
-        transition: 'background 250ms ease'
-      }}
-    >
-      <div
-        className="glass"
-        style={{
-          width: '100%',
-          maxWidth: 420,
-          padding: 24,
-          borderRadius: 18,
-          boxShadow: 'var(--shadow-strong)',
-          transform: 'translateZ(0)',
-          backdropFilter: 'blur(16px) saturate(140%)',
-          background: 'color-mix(in oklab, rgba(15,23,42,0.82) 70%, rgba(15,23,42,0.92) 30%)',
-          color: 'white',
-          border: '1px solid rgba(148,163,184,0.35)',
-          position: 'relative',
-          overflow: 'hidden',
-          transition: 'transform 150ms ease, box-shadow 200ms ease'
-        }}
-      >
-        <header className="col" style={{ gap: 6, marginBottom: 14 }}>
-          <h1 style={{ fontSize: 32, lineHeight: 1.2, margin: 0, fontWeight: 600 }}>Bienvenido</h1>
-          <p className="muted" style={{ margin: 0 }}>Inicia sesión para continuar</p>
+    <div className="auth-bg centered">
+      <div className="glass-panel fade-in auth-container">
+        <header className="col gap-2 mb-4">
+          <h1 className="h1 text-center">Bienvenido</h1>
+          <p className="muted text-center small">Inicia sesión para continuar</p>
         </header>
 
         <LoginForm onSuccess={onLoggedIn} />
@@ -157,8 +132,7 @@ function LoginForm({ onSuccess }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="col"
-      style={{ gap: 12 }}
+      className="col gap-3"
       aria-describedby={formError ? 'login-error' : undefined}
     >
       <TextField
@@ -187,46 +161,35 @@ function LoginForm({ onSuccess }) {
         required
       />
 
-      <div className="row space-between" style={{ marginTop: 4 }}>
-        <label className="row" style={{ gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+      <div className="row justify-between mt-1">
+        <label className="row gap-2 cursor-pointer select-none">
           <input
             type="checkbox"
             checked={remember}
             onChange={(e) => setRemember(e.target.checked)}
             aria-label="Recordarme"
           />
-          <span className="small">Recordarme</span>
+          <span className="small muted">Recordarme</span>
         </label>
         <a
           href="#"
-          className="small"
-          style={{ textDecoration: 'none', color: 'var(--text-muted)' }}
-          onFocus={(e) => (e.currentTarget.style.textDecoration = 'underline')}
-          onBlur={(e) => (e.currentTarget.style.textDecoration = 'none')}
-          onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
-          onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
+          className="small muted no-decoration"
         >
           ¿Olvidaste tu contraseña?
         </a>
       </div>
 
-      {/* Enlace a registro */}
-      <div className="row" style={{ justifyContent: 'flex-end', marginTop: 4 }}>
+      <div className="row justify-end mt-1">
         <a
           href="/signup"
-          className="small"
-          style={{ textDecoration: 'none', color: 'var(--text-muted)' }}
-          onFocus={(e) => (e.currentTarget.style.textDecoration = 'underline')}
-          onBlur={(e) => (e.currentTarget.style.textDecoration = 'none')}
-          onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
-          onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
+          className="small muted no-decoration"
         >
-          ¿No tienes cuenta? Regístrate
+          ¿No tienes cuenta? <span className="bold text-primary">Regístrate</span>
         </a>
       </div>
 
       {formError && (
-        <div id="login-error" className="small" role="alert" style={{ color: 'var(--danger)', marginTop: 4 }}>
+        <div id="login-error" className="small mt-1 text-danger" role="alert">
           {formError}
         </div>
       )}
@@ -238,7 +201,7 @@ function LoginForm({ onSuccess }) {
         loading={submitting}
         disabled={!canSubmit}
         fullWidth
-        style={{ marginTop: 4 }}
+        className="mt-2"
         aria-label="Iniciar sesión"
       >
         Iniciar sesión

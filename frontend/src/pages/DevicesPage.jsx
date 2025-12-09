@@ -62,15 +62,15 @@ export default function DevicesPage() {
   }
 
   return (
-    <div className="col" style={{ gap: 'var(--spacing-6)' }}>
+    <div className="col gap-6">
       <header>
-        <h1 style={{ fontSize: 'var(--font-2xl)', fontWeight: 600 }}>Dispositivos</h1>
+        <h1 className="h1">Dispositivos</h1>
         <p className="muted">Gestiona tus equipos MikroTik y monitorea su estado.</p>
       </header>
 
       <div className="card">
-        <h3 style={{ marginBottom: 'var(--spacing-4)' }}>Nuevo Dispositivo</h3>
-        <form className="row wrap" style={{ gap: 'var(--spacing-3)', alignItems: 'flex-end' }} onSubmit={onAdd}>
+        <h3 className="h3 mb-4">Nuevo Dispositivo</h3>
+        <form className="row wrap gap-3" style={{ alignItems: 'flex-end' }} onSubmit={onAdd}>
           <div style={{ flex: '1 1 200px' }}>
             <TextField
               label="Nombre"
@@ -130,35 +130,41 @@ export default function DevicesPage() {
           </div>
         </form>
         {isSuspended && (
-          <div className="muted small mt">
+          <div className="muted small mt-2">
             ℹ️ Modo solo lectura: no puedes agregar equipos mientras la cuenta esté suspendida.
           </div>
         )}
       </div>
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div className="table">
-          <div className="thead row" style={{ padding: 'var(--spacing-3) var(--spacing-4)', background: 'var(--bg-muted)' }}>
-            <div>Nombre</div>
-            <div>IP</div>
-            <div>Puerto</div>
-            <div>Salud</div>
-          </div>
-          <div style={{ padding: '0 var(--spacing-4)' }}>
-            {devices.map((d) => (
-              <div key={d.id} className="row" style={{ padding: 'var(--spacing-3) 0' }}>
-                <div style={{ fontWeight: 500 }}>{d.name}</div>
-                <div className="muted">{d.ip_address}</div>
-                <div className="muted">{d.port}</div>
-                <div><DeviceHealthIndicator healthStatus={d.health_status || 'verde'} /></div>
-              </div>
-            ))}
-            {!devices.length && !loading && (
-              <div className="muted" style={{ padding: 'var(--spacing-4) 0' }}>
-                No hay dispositivos registrados.
-              </div>
-            )}
-          </div>
+        <div className="table-container">
+          <table className="table">
+            <thead>
+              <tr style={{ background: 'var(--bg-muted)' }}>
+                <th>Nombre</th>
+                <th>IP</th>
+                <th>Puerto</th>
+                <th>Salud</th>
+              </tr>
+            </thead>
+            <tbody>
+              {devices.map((d) => (
+                <tr key={d.id}>
+                  <td className="bold">{d.name}</td>
+                  <td className="muted">{d.ip_address}</td>
+                  <td className="muted">{d.port}</td>
+                  <td><DeviceHealthIndicator healthStatus={d.health_status || 'verde'} /></td>
+                </tr>
+              ))}
+              {!devices.length && !loading && (
+                <tr>
+                  <td colSpan="4" className="text-center muted" style={{ padding: 'var(--spacing-4)' }}>
+                    No hay dispositivos registrados.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

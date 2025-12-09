@@ -6,14 +6,13 @@ import useAuth from '../hooks/useAuth.js'
 
 // Dashboard general con resumen rápido.
 // Gating estricto: no consumir endpoints hasta authReady + token.
-// DEBUG: logs con prefijo [Dashboard] (remover tras estabilizar).
 export default function DashboardPage() {
   const { token, authReady } = useAuth()
   const { alerts } = useFetchAlerts()
   const { devices, loading: loadingHealth } = useDeviceHealth()
   const [criticas, setCriticas] = useState(0)
   const [slaMin, setSlaMin] = useState(null)
-  const [slaLoaded, setSlaLoaded] = useState(false) // evita doble carga en StrictMode
+  const [slaLoaded, setSlaLoaded] = useState(false)
 
   useEffect(() => {
     setCriticas(alerts.filter((a) => a.estado === 'Alerta Crítica').length)
@@ -21,14 +20,12 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!authReady || !token) {
-      console.debug('[Dashboard] skip SLA fetch (authReady/token no listos)')
       return
     }
     if (slaLoaded) return
     let mounted = true
     ;(async () => {
       try {
-        console.debug('[Dashboard] fetching /sla/metrics')
         const r = await fetch(
           `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/sla/metrics`,
           { headers: { Authorization: `Bearer ${token}` } }
@@ -55,29 +52,26 @@ export default function DashboardPage() {
   }, [devices])
 
   return (
-    <div className="col" style={{ gap: 'var(--spacing-6)' }}>
+    <div className="col gap-6">
       <header>
-        <h1 style={{ fontSize: 'var(--font-2xl)', fontWeight: 600, margin: 0 }}>Dashboard</h1>
-        <p className="muted">Resumen operativo en tiempo real.</p>
+        <h1 className="h1">Dashboard</h1>
+        <p className="muted small">Resumen operativo en tiempo real.</p>
       </header>
 
-      <div className="grid cards-3" style={{ gap: 'var(--spacing-4)' }}>
+      <div className="grid grid-cols-3 gap-4">
         <div className="card">
-          <h3 className="muted small uppercase">Alertas activas</h3>
-          <div className="kpi" style={{ fontSize: 'var(--font-3xl)', fontWeight: 700 }}>{alerts.length}</div>
+          <h3 className="kpi-label">Alertas activas</h3>
+          <div className="kpi-value">{alerts.length}</div>
         </div>
         <div className="card">
-          <h3 className="muted small uppercase">Alertas críticas</h3>
-          <div
-            className="kpi"
-            style={{ fontSize: 'var(--font-3xl)', fontWeight: 700, color: 'var(--critical)' }}
-          >
+          <h3 className="kpi-label">Alertas críticas</h3>
+          <div className="kpi-value" style={{ color: 'var(--critical)' }}>
             {criticas}
           </div>
         </div>
         <div className="card">
-          <h3 className="muted small uppercase">Salud global</h3>
-          <div className="row gap" style={{ marginTop: 'var(--spacing-2)' }}>
+          <h3 className="kpi-label">Salud global</h3>
+          <div className="row gap-2 mt-2 items-center">
             <DeviceHealthIndicator healthStatus={saludGlobal} />
             {loadingHealth && <span className="muted small">Actualizando...</span>}
           </div>
@@ -85,11 +79,8 @@ export default function DashboardPage() {
       </div>
 
       <div className="card">
-        <h3 className="muted small uppercase">SLA - Tiempo promedio resolución (severas)</h3>
-        <div
-          className="kpi"
-          style={{ fontSize: 'var(--font-2xl)', fontWeight: 600, marginTop: 'var(--spacing-2)' }}
-        >
+        <h3 className="kpi-label">SLA - Tiempo promedio resolución (severas)</h3>
+        <div className="kpi-value">
           {slaMin !== null ? `${slaMin.toFixed(1)} min` : authReady ? '—' : 'Esperando auth…'}
         </div>
         {slaMin === null && authReady && !loadingHealth && (
@@ -98,15 +89,10 @@ export default function DashboardPage() {
       </div>
 
       <div className="card">
-        <h3 style={{ marginBottom: 'var(--spacing-3)' }}>Estado de equipos</h3>
-        <div className="row wrap" style={{ gap: 'var(--spacing-2)' }}>
+        <h3 className="h3 mb-3">Estado de equipos</h3>
+        <div className="row wrap gap-2" style={{ flexWrap: 'wrap' }}>
           {devices.map((d) => (
-            <div key={d.device_id || d.id} className="chip" style={{
-              border: '1px solid var(--border)',
-              padding: '4px 12px',
-              borderRadius: '99px',
-              background: 'var(--bg-muted)'
-            }}>
+            <div key={d.device_id || d.id} className="badge badge-pill">
               {d.name} <DeviceHealthIndicator healthStatus={d.health_status} />
             </div>
           ))}

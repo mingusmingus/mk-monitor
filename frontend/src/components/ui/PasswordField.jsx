@@ -37,11 +37,11 @@ export default function PasswordField({
   return (
     <div className={className} style={style}>
       {label && (
-        <label htmlFor={inputId} className="small" style={{ display: 'block', marginBottom: 6 }}>
+        <label htmlFor={inputId} className="small bold" style={{ display: 'block', marginBottom: 6 }}>
           {label} {required && <span aria-hidden="true" style={{ color: 'var(--danger)' }}>*</span>}
         </label>
       )}
-      {hint && <div className="small" style={{ marginBottom: 6, color: 'var(--text-muted)' }}>{hint}</div>}
+      {hint && <div className="small muted" style={{ marginBottom: 6 }}>{hint}</div>}
 
       <div style={{ position: 'relative', width: '100%' }}>
         <Input
@@ -75,7 +75,7 @@ export default function PasswordField({
       </div>
 
       {!error && helperText && (
-        <div id={helperId} className="small" style={{ marginTop: 6, color: 'var(--text-muted)' }}>
+        <div id={helperId} className="small muted" style={{ marginTop: 6 }}>
           {helperText}
         </div>
       )}

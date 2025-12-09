@@ -55,22 +55,14 @@ const Button = forwardRef(function Button(
   // Reutiliza clases existentes de theme.css si aplica
   if (variant === 'primary') classes.push('btn-primary')
   if (variant === 'secondary') classes.push('btn-secondary')
+  if (variant === 'ghost') classes.push('btn-ghost')
 
   // Estilos base + tamaño + ancho
+  // Nota: width: 100% se puede hacer con clase w-full si se pasara, pero para soportar la prop fullWidth:
   const baseStyle = {
+    ...(sizeStyles[size] || sizeStyles.md),
     width: fullWidth ? '100%' : undefined,
-    borderRadius: 'var(--radius-sm)',
-    ...(sizeStyles[size] || sizeStyles.md)
-  }
-
-  // Variante ghost sin CSS adicional (usa tokens)
-  if (variant === 'ghost') {
-    Object.assign(baseStyle, {
-      background: 'transparent',
-      color: 'var(--text)',
-      border: '1px solid var(--border)',
-      boxShadow: 'none'
-    })
+    ...style
   }
 
   return (
@@ -79,32 +71,15 @@ const Button = forwardRef(function Button(
       className={[...classes, className].filter(Boolean).join(' ')}
       disabled={As === 'button' ? isDisabled : undefined}
       aria-busy={loading || undefined}
-      style={{ ...baseStyle, ...(style || {}) }}
+      style={baseStyle}
       {...rest}
     >
-      <span className="row" style={{ alignItems: 'center', gap: '8px' }}>
         {loading && <Spinner />}
         {!loading && leftIcon}
         <span>{children}</span>
         {!loading && rightIcon}
-      </span>
     </As>
   )
 })
 
 export default Button
-/* Ejemplo de uso (solo documentación, no incluir en build)
-// import Button from '@/components/ui/Button.jsx'
-// function Example() {
-//   return (
-//     <div className="row gap">
-//       <Button>Primario</Button>
-//       <Button variant="secondary">Secundario</Button>
-//       <Button variant="ghost">Ghost</Button>
-//       <Button size="sm">Pequeño</Button>
-//       <Button size="lg" loading>Guardando...</Button>
-//       <Button fullWidth>Completo</Button>
-//     </div>
-//   )
-// }
-*/

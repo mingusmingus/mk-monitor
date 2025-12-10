@@ -1,39 +1,14 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import TextField from '../components/ui/TextField.jsx'
-import PasswordField from '../components/ui/PasswordField.jsx'
+import Input from '../components/ui/Input.jsx'
 import Button from '../components/ui/Button.jsx'
+import ThemeToggle from '../components/Layout/ThemeToggle.jsx'
 import { register as registerApi } from '../api/registerApi.js'
 
-function getErrorMessage(err) {
-  const status = err?.response?.status
-  const code = err?.response?.data?.error
-
-  if (status === 409 && code === 'email_taken') {
-    return { message: 'Este email ya está registrado.', target: 'email' }
-  }
-  if (status === 400 && code === 'invalid_email') {
-    return { message: 'El email no tiene un formato válido.', target: 'email' }
-  }
-  if (status === 400 && code === 'email_required') {
-    return { message: 'El email es obligatorio.', target: 'email' }
-  }
-  if (status === 400 && code === 'weak_password') {
-    return { message: 'La contraseña debe tener al menos 8 caracteres.', target: 'password' }
-  } 
-  if (status === 429) {
-    return { message: 'Demasiados intentos. Intenta nuevamente más tarde.', target: 'form' }
-  }
-
-  // Network o 5xx
-  if (!status || status >= 500) {
-    return { message: 'Error interno. Reintenta en unos segundos.', target: 'form' }
-  }
-
-  return { message: 'Ocurrió un error al registrar tu cuenta.', target: 'form' }
-}
-
-// Pantalla de registro simple: crea Tenant + Usuario admin.
+/**
+ * Signup Page Redesign
+ * - CSS: src/styles/pages/login.css (Shared with Login for consistency)
+ */
 export default function SignupPage() {
   const navigate = useNavigate()
 
@@ -44,11 +19,6 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-
-  const emailRef = useRef(null)
-  const passwordRef = useRef(null)
-  const confirmPasswordRef = useRef(null)
-  const fullNameRef = useRef(null)
 
   const emailValid = useMemo(() => !email || /.+@.+\..+/.test(email), [email])
 
@@ -63,13 +33,6 @@ export default function SignupPage() {
     [email, password, confirmPassword, fullName, emailValid, loading]
   )
 
-  const focusFirstErrorField = useCallback((field) => {
-    if (field === 'email' && emailRef.current) emailRef.current.focus()
-    else if (field === 'password' && passwordRef.current) passwordRef.current.focus()
-    else if (field === 'confirmPassword' && confirmPasswordRef.current) confirmPasswordRef.current.focus()
-    else if (field === 'fullName' && fullNameRef.current) fullNameRef.current.focus()
-  }, [])
-
   const handleSubmit = useCallback(
     async (e) => {
       e.preventDefault()
@@ -81,33 +44,18 @@ export default function SignupPage() {
       const trimmedEmail = email.trim()
       const trimmedFullName = fullName.trim()
 
-      if (!trimmedEmail) {
-        setError('El email es obligatorio.')
-        focusFirstErrorField('email')
-        return
-      }
-
-      if (!/.+@.+\..+/.test(trimmedEmail)) {
+      if (!trimmedEmail || !/.+@.+\..+/.test(trimmedEmail)) {
         setError('El email no tiene un formato válido.')
-        focusFirstErrorField('email')
         return
       }
 
-      if (!trimmedFullName) {
-        setError('El nombre completo es obligatorio.')
-        focusFirstErrorField('fullName')
-        return
-      }
-
-      if (!password || password.length < 8) {
+      if (password.length < 8) {
         setError('La contraseña debe tener al menos 8 caracteres.')
-        focusFirstErrorField('password')
         return
       }
 
       if (password !== confirmPassword) {
         setError('Las contraseñas no coinciden.')
-        focusFirstErrorField('confirmPassword')
         return
       }
 
@@ -123,29 +71,19 @@ export default function SignupPage() {
         const status = response?.status
 
         if (status === 201) {
-          setSuccess('Cuenta creada. Ahora inicia sesión.')
+          setSuccess('Cuenta creada. Redirigiendo...')
           setError('')
-          setPassword('')
-          setConfirmPassword('')
-
           setTimeout(() => {
             navigate('/login', { state: { prefillEmail: trimmedEmail } })
           }, 1500)
         } else if (status === 409) {
           setError('Este email ya está registrado.')
-          focusFirstErrorField('email')
-        } else if (status === 429) {
-          setError('Demasiados solicitudes. Intenta más tarde.')
         } else {
           setError('Ocurrió un error al registrar tu cuenta.')
         }
       } catch (err) {
-        const status = err?.response?.status
-        if (status === 409) {
+        if (err?.response?.status === 409) {
           setError('Este email ya está registrado.')
-          focusFirstErrorField('email')
-        } else if (status === 429) {
-          setError('Demasiados solicitudes. Intenta más tarde.')
         } else {
           setError('Ocurrió un error al registrar tu cuenta.')
         }
@@ -153,75 +91,72 @@ export default function SignupPage() {
         setLoading(false)
       }
     },
-    [email, password, confirmPassword, fullName, loading, focusFirstErrorField, navigate]
+    [email, password, confirmPassword, fullName, loading, navigate]
   )
 
   return (
-    <div className="auth-bg centered">
-      <div className="glass-panel fade-in auth-container">
-        <header className="col gap-2 mb-4">
-          <h1 className="h1 text-center">Crear cuenta</h1>
-          <p className="muted small text-center">Crea tu tenant y el usuario administrador.</p>
+    <div className="auth-page">
+      {/* Decor */}
+      <div className="auth-orb" style={{ top: 0, left: 0 }}></div>
+      <div className="auth-orb" style={{ bottom: 0, right: 0, animationDelay: '-10s', background: 'radial-gradient(circle, var(--color-accent-secondary) 0%, transparent 70%)' }}></div>
+
+      {/* Theme Toggle */}
+      <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 20 }}>
+        <ThemeToggle />
+      </div>
+
+      <div className="auth-card fade-in">
+        <header className="auth-header">
+            <div className="auth-logo">M</div>
+            <h1 className="auth-title">Crear Cuenta</h1>
+            <p className="auth-subtitle">Registra tu organización y comienza gratis</p>
         </header>
 
-        <form onSubmit={handleSubmit} className="col gap-3">
-          <TextField
-            label="Email"
-            type="email"
-            placeholder="email@dominio.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            inputRef={emailRef}
-            aria-invalid={!!error && !emailValid}
-            error={!emailValid && email ? 'El email no tiene un formato válido.' : ''}
-            required
-          />
-
-          <PasswordField
-            label="Contraseña"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            inputRef={passwordRef}
-            aria-invalid={!!error && (password.length < 8)}
-            error={password && password.length < 8 ? 'La contraseña debe tener al menos 8 caracteres.' : ''}
-            required
-          />
-
-          <PasswordField
-            label="Confirmar contraseña"
-            placeholder="••••••••"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            inputRef={confirmPasswordRef}
-            aria-invalid={!!error && password !== confirmPassword}
-            error={
-              confirmPassword && password !== confirmPassword
-                ? 'Las contraseñas no coinciden.'
-                : ''
-            }
-            required
-          />
-
-          <TextField
-            label="Nombre completo"
-            type="text"
-            placeholder="Nombre y apellidos"
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <Input
+            label="Nombre Completo"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            inputRef={fullNameRef}
-            aria-invalid={!!error && !fullName.trim()}
-            error={''}
             required
+            placeholder="Juan Pérez"
           />
+
+          <Input
+            label="Email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            error={!emailValid && email ? 'Email inválido' : undefined}
+            required
+            placeholder="usuario@empresa.com"
+          />
+
+          <Input
+            label="Contraseña"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            placeholder="Mínimo 8 caracteres"
+          />
+
+          <Input
+            label="Confirmar Contraseña"
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            placeholder="Repite tu contraseña"
+          />
+
           {error && (
-            <div className="small mt-1 text-danger" role="alert">
+            <div className="auth-error">
               {error}
             </div>
           )}
 
           {success && (
-            <div className="small mt-1 text-success" role="status">
+            <div style={{ color: 'var(--color-accent-secondary)', textAlign: 'center', fontSize: '13px', fontWeight: 600 }}>
               {success}
             </div>
           )}
@@ -230,20 +165,16 @@ export default function SignupPage() {
             type="submit"
             variant="primary"
             loading={loading}
-            disabled={!canSubmit || loading}
+            disabled={!canSubmit}
             fullWidth
-            className="mt-2"
+            size="lg"
+            style={{ marginTop: '8px' }}
           >
-            {loading ? 'Creando cuenta…' : 'Crear cuenta'}
+            Registrarse
           </Button>
 
-          <div className="row justify-end mt-1">
-            <a
-              href="/login"
-              className="small muted no-decoration"
-            >
-              ¿Ya tienes cuenta? <span className="bold text-primary">Inicia sesión</span>
-            </a>
+          <div style={{ textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)', marginTop: '16px' }}>
+            ¿Ya tienes cuenta? <a href="/login" style={{ color: 'var(--color-accent-primary)', fontWeight: 600, textDecoration: 'none' }}>Inicia sesión</a>
           </div>
         </form>
       </div>

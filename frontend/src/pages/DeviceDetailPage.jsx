@@ -1,139 +1,239 @@
 import React, { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { getAlerts } from '../api/alertApi.js'
+import { useParams, useNavigate } from 'react-router-dom'
+import { getAlerts, updateAlertStatus } from '../api/alertApi.js'
 import client from '../api/client.js'
-import AlertCard from '../components/AlertCard.jsx'
-import { updateAlertStatus } from '../api/alertApi.js'
 import useAuth from '../hooks/useAuth.js'
+import Card from '../components/ui/Card.jsx'
 import Button from '../components/ui/Button.jsx'
-import TextField from '../components/ui/TextField.jsx'
+import Input from '../components/ui/Input.jsx'
 
-// Detalle del equipo con alertas y logs recientes.
-// Filtros de fecha + Export CSV.
+/**
+ * Device Detail Page Redesign
+ * - CSS: src/styles/pages/detail.css
+ */
 export default function DeviceDetailPage() {
   const { deviceId } = useParams()
-  const { tenantStatus, token } = useAuth()
+  const navigate = useNavigate()
+  const { tenantStatus } = useAuth()
+  const [device, setDevice] = useState(null)
   const [alerts, setAlerts] = useState([])
   const [logs, setLogs] = useState([])
   const [limit, setLimit] = useState(10)
   const [fechaInicio, setFechaInicio] = useState('')
   const [fechaFin, setFechaFin] = useState('')
+  const [loading, setLoading] = useState(true)
 
   const isSuspended = tenantStatus === 'suspendido'
 
-  const loadAlerts = async () => {
-    const res = await getAlerts({ device_id: Number(deviceId) })
-    setAlerts(res.data || [])
-  }
+  useEffect(() => {
+    // Parallel fetch
+    const fetchAll = async () => {
+        setLoading(true)
+        try {
+            // Mock device info fetch (usually this would be await getDevice(deviceId))
+
+            // Fetch Alerts
+            const alertsRes = await getAlerts({ device_id: Number(deviceId) })
+            setAlerts(alertsRes.data || [])
+
+            // Fetch Logs
+            await loadLogs()
+
+        } catch(e) {
+            console.error(e)
+        } finally {
+            setLoading(false)
+        }
+    }
+    fetchAll()
+  }, [deviceId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadLogs = async () => {
-    const params = new URLSearchParams()
-    params.set('limit', limit.toString())
-    if (fechaInicio) params.set('fecha_inicio', new Date(fechaInicio).toISOString())
-    if (fechaFin) params.set('fecha_fin', new Date(fechaFin).toISOString())
+    try {
+        const params = new URLSearchParams()
+        params.set('limit', limit.toString())
+        if (fechaInicio) params.set('fecha_inicio', new Date(fechaInicio).toISOString())
+        if (fechaFin) params.set('fecha_fin', new Date(fechaFin).toISOString())
 
-    const res = await client.get(`/devices/${deviceId}/logs?${params.toString()}`)
-    setLogs(res.data || [])
-  }
-
-  useEffect(() => {
-    loadAlerts()
-  }, [deviceId])
-
-  useEffect(() => {
-    loadLogs()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceId, limit])
-
-  const handleAction = async (alert, newStatus) => {
-    if (isSuspended) {
-      alert('Acción bloqueada: cuenta suspendida')
-      return
+        const res = await client.get(`/devices/${deviceId}/logs?${params.toString()}`)
+        setLogs(res.data || [])
+    } catch (e) {
+        console.warn('Error loading logs', e)
     }
-    await updateAlertStatus(alert.id, { status_operativo: newStatus })
-    await loadAlerts()
   }
 
-  const handleExportCSV = () => {
-    const params = new URLSearchParams()
-    params.set('export', 'csv')
-    params.set('limit', '50')
-    if (fechaInicio) params.set('fecha_inicio', new Date(fechaInicio).toISOString())
-    if (fechaFin) params.set('fecha_fin', new Date(fechaFin).toISOString())
-    
-    // Construir URL con token en header (abrir en ventana nueva con descarga)
-    const url = `${client.defaults.baseURL}/devices/${deviceId}/logs?${params.toString()}`
-    window.open(url, '_blank')
+  const handleAction = async (alertId, newStatus) => {
+    if (isSuspended) return
+    await updateAlertStatus(alertId, { status_operativo: newStatus })
+    const alertsRes = await getAlerts({ device_id: Number(deviceId) })
+    setAlerts(alertsRes.data || [])
   }
 
   return (
-    <div className="col gap-6">
-      <h1 className="h1">Dispositivo #{deviceId}</h1>
+    <div className="detail-page fade-in">
 
-      <div className="card">
-        <div className="row justify-between mb-4">
-          <h3 className="h3">Alertas</h3>
-        </div>
-        <div className="col gap-3">
-          {alerts.map((a) => (
-            <AlertCard key={a.id} alert={a} onAction={isSuspended ? null : handleAction} />
-          ))}
-          {!alerts.length && <span className="muted p-4 text-center">Sin alertas.</span>}
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="row justify-between wrap gap-2 mb-4">
-          <h3 className="h3">Logs recientes</h3>
-          <div className="row gap-2">
-            <select
-              className="input"
-              value={limit}
-              onChange={(e) => setLimit(Number(e.target.value))}
-              style={{ width: 'auto' }}
+      {/* Header */}
+      <header className="detail-header">
+        <div>
+            <button
+                onClick={() => navigate('/devices')}
+                className="back-link"
             >
-              {[5, 10, 20].map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <Button variant="primary" onClick={handleExportCSV}>
-              Exportar CSV
-            </Button>
-          </div>
+                ← Volver a equipos
+            </button>
+            <h1 className="h1">Router Principal #{deviceId}</h1>
+            <p className="body-sm text-muted">Detalles operativos y monitoreo en tiempo real</p>
         </div>
 
-        {/* Filtros de fecha (prioridad MEDIA) */}
-        <div className="row wrap gap-3 mb-4 items-end">
-          <div className="col gap-1" style={{ flex: 1 }}>
-            <span className="small muted">Fecha inicio:</span>
-            <input
-              type="datetime-local"
-              value={fechaInicio}
-              onChange={(e) => setFechaInicio(e.target.value)}
-              className="input"
-            />
-          </div>
-          <div className="col gap-1" style={{ flex: 1 }}>
-            <span className="small muted">Fecha fin:</span>
-            <input
-              type="datetime-local"
-              value={fechaFin}
-              onChange={(e) => setFechaFin(e.target.value)}
-              className="input"
-            />
-          </div>
-          <Button onClick={loadLogs}>
-            Aplicar filtros
-          </Button>
+        <div style={{ display: 'flex', gap: '12px' }}>
+            <Button variant="ghost" disabled={isSuspended}>Reiniciar</Button>
+            <Button variant="primary" disabled={isSuspended}>Editar Configuración</Button>
+        </div>
+      </header>
+
+      {/* Main Grid Layout */}
+      <div className="detail-grid">
+
+        {/* Left Column (Main Info & Charts) */}
+        <div className="left-column">
+
+            {/* Basic Info Card */}
+            <Card>
+                <h3 className="h3" style={{ marginBottom: '16px' }}>Información del Sistema</h3>
+                <div className="info-grid">
+                    <InfoItem label="Dirección IP" value="192.168.88.1" />
+                    <InfoItem label="MAC Address" value="B8:69:F4:XX:XX:XX" />
+                    <InfoItem label="Ubicación" value="Oficina Central - Rack 1" />
+                    <InfoItem label="Uptime" value="14d 2h 12m" />
+                    <InfoItem label="Versión Firmware" value="RouterOS v7.1.5" />
+                    <InfoItem label="Modelo" value="RB4011iGS+" />
+                </div>
+            </Card>
+
+            {/* Performance Charts Placeholder */}
+            <Card>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                    <h3 className="h3">Rendimiento</h3>
+                    <select style={{ border: 'none', background: 'transparent', color: 'var(--color-text-muted)', fontSize: '13px' }}>
+                        <option>Última hora</option>
+                        <option>24 horas</option>
+                    </select>
+                </div>
+                <div style={{ height: '200px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '4px' }}>
+                    {/* Fake Chart Bars */}
+                    {Array.from({ length: 40 }).map((_, i) => (
+                        <div key={i} style={{
+                            width: '100%',
+                            height: `${Math.random() * 80 + 20}%`,
+                            backgroundColor: i % 2 === 0 ? 'var(--color-accent-primary)' : 'rgba(0,122,255,0.3)',
+                            borderRadius: '2px'
+                        }}></div>
+                    ))}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                    <span>CPU Load: 12%</span>
+                    <span>Memory: 45%</span>
+                    <span>Temp: 42°C</span>
+                </div>
+            </Card>
+
+            {/* Logs */}
+            <Card>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <h3 className="h3">Logs del Sistema</h3>
+                    <Button variant="ghost" size="sm" onClick={() => loadLogs()}>Actualizar</Button>
+                </div>
+
+                <div className="filters" style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                     <Input type="datetime-local" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} style={{ marginBottom: 0 }} />
+                     <Input type="datetime-local" value={fechaFin} onChange={e => setFechaFin(e.target.value)} style={{ marginBottom: 0 }} />
+                </div>
+
+                <div className="logs-container">
+                    {logs.length > 0 ? logs.map(l => (
+                        <div key={l.id} className="log-entry">
+                            <span style={{ color: 'var(--color-accent-primary)' }}>[{l.timestamp_equipo || new Date().toISOString()}]</span> {l.raw_log}
+                        </div>
+                    )) : (
+                        <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)' }}>No hay logs para mostrar</div>
+                    )}
+                </div>
+            </Card>
+
         </div>
 
-        <div className="logs bg-muted p-4 rounded-md" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-          {logs.map((l) => (
-            <pre key={l.id} className="small" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-              <span className="muted">[{l.timestamp_equipo || 'N/A'}]</span> {l.raw_log}
-            </pre>
-          ))}
-          {!logs.length && <span className="muted">Sin logs.</span>}
+        {/* Right Column (Status & Alerts) */}
+        <div className="right-column">
+
+            {/* Status Card */}
+            <Card statusColor="success" elevated>
+                <div className="status-card-content">
+                    <div className="status-label">Estado Actual</div>
+                    <div className="status-value">
+                        <span className="status-dot-large"></span>
+                        ONLINE
+                    </div>
+                    <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--color-border)', paddingTop: '16px' }}>
+                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                            <span style={{ fontSize: '20px', fontWeight: 600 }}>99.9%</span>
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>SLA Mes</span>
+                         </div>
+                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                            <span style={{ fontSize: '20px', fontWeight: 600 }}>2</span>
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Alertas</span>
+                         </div>
+                    </div>
+                </div>
+            </Card>
+
+            {/* Quick Actions */}
+            <Card>
+                <h3 className="h3" style={{ marginBottom: '16px' }}>Acciones Rápidas</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <Button variant="secondary" fullWidth disabled={isSuspended}>Ver Tráfico en Vivo</Button>
+                    <Button variant="secondary" fullWidth disabled={isSuspended}>Descargar Backup</Button>
+                    <Button variant="secondary" fullWidth disabled={isSuspended}>Test de Velocidad</Button>
+                    <div style={{ height: '1px', background: 'var(--color-border)', margin: '8px 0' }}></div>
+                    <Button variant="danger" fullWidth disabled={isSuspended}>Apagar Interfaz</Button>
+                </div>
+            </Card>
+
+            {/* Active Alerts */}
+            <Card>
+                <h3 className="h3" style={{ marginBottom: '16px' }}>Alertas Activas</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {alerts.length > 0 ? alerts.map(a => (
+                        <div key={a.id} className={`alert-item ${a.estado === 'Alerta Crítica' ? 'alert-critical' : 'alert-warning'}`}>
+                            <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>{a.mensaje}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>{new Date(a.fecha_detectado).toLocaleString()}</div>
+
+                            {!isSuspended && (
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button onClick={() => handleAction(a.id, 'en_revision')} style={{ fontSize: '11px', color: 'var(--color-accent-primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Revisar</button>
+                                    <button onClick={() => handleAction(a.id, 'resuelto')} style={{ fontSize: '11px', color: 'var(--color-accent-secondary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Resolver</button>
+                                </div>
+                            )}
+                        </div>
+                    )) : (
+                        <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', textAlign: 'center', padding: '12px' }}>
+                            Sin alertas activas
+                        </div>
+                    )}
+                </div>
+            </Card>
+
         </div>
+
       </div>
     </div>
   )
+}
+
+function InfoItem({ label, value }) {
+    return (
+        <div className="info-item">
+            <span className="info-label">{label}</span>
+            <span className="info-value">{value}</span>
+        </div>
+    )
 }

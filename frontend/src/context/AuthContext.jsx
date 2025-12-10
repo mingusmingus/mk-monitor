@@ -76,21 +76,25 @@ export function AuthProvider({ children }) {
   }, [tenantStatus])
 
   const login = useCallback(async (email, password) => {
-    const res = await apiLogin(email, password)
-    const { token: jwt, role: userRole, tenant_status } = res.data || {}
-    setToken(jwt || null)
-    setRole(userRole || null)
-    setTenantStatus(tenant_status || 'activo')
-    if (jwt) {
-      client.defaults.headers.common.Authorization = `Bearer ${jwt}`
-      localStorage.setItem(TOKEN_KEY, jwt)
-      window.__AUTH_READY = true
-      setAuthReady(true)
-      setExpiredSession(false)
-      console.debug('[Auth] login ok, token prefix:', jwt.slice(0, 16))
-      return true
+    try {
+        const res = await apiLogin(email, password)
+        const { token: jwt, role: userRole, tenant_status } = res.data || {}
+        setToken(jwt || null)
+        setRole(userRole || null)
+        setTenantStatus(tenant_status || 'activo')
+        if (jwt) {
+          client.defaults.headers.common.Authorization = `Bearer ${jwt}`
+          localStorage.setItem(TOKEN_KEY, jwt)
+          window.__AUTH_READY = true
+          setAuthReady(true)
+          setExpiredSession(false)
+          console.debug('[Auth] login ok, token prefix:', jwt.slice(0, 16))
+          return true
+        }
+        return false
+    } catch (e) {
+        throw e
     }
-    return false
   }, [])
 
   const logout = useCallback(() => {

@@ -1,23 +1,33 @@
 import React from 'react'
-import { createRoot } from 'react-dom/client'
+import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
+
+// Global Styles
 import './styles/theme.css'
 import './styles/layout.css'
+
+// Component Styles
+import './styles/components/button.css'
+import './styles/components/input.css'
+
+// Page Styles
+import './styles/pages/login.css'
+import './styles/pages/dashboard.css'
+import './styles/pages/devices.css'
+import './styles/pages/detail.css'
+
 import { ThemeProvider } from './providers/ThemeProvider.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
 
-// Punto de entrada del frontend (Vite + React).
-createRoot(
-  document.getElementById('root') || document.body.appendChild(document.createElement('div'))
-).render(
+ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <ThemeProvider>
+    <BrowserRouter>
       <AuthProvider>
-        <BrowserRouter>
+        <ThemeProvider>
           <App />
-        </BrowserRouter>
+        </ThemeProvider>
       </AuthProvider>
-    </ThemeProvider>
-  </React.StrictMode>
+    </BrowserRouter>
+  </React.StrictMode>,
 )

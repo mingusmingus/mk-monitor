@@ -1,9 +1,9 @@
 """
 Servicio de monitoreo:
 
-- Conecta a routers MikroTik (RouterOS API/SSH) para obtener logs.
-- Persiste LogEntry y dispara análisis por IA.
-- Respeta límites de plan (número de equipos por tenant).
+- Conecta a routers MikroTik (RouterOS API) para minería de datos forense.
+- Persiste LogEntry y dispara análisis por IA (DeepSeek).
+- Respeta límites de plan.
 """
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
@@ -16,14 +16,8 @@ from ..models.log_entry import LogEntry
 from ..models.alert import Alert
 from ..db import db
 from ..config import Config
-from .ai_analysis_service import analyze_logs
-from .device_service import decrypt_secret
-
-
-_ROUTEROS_MAX_ATTEMPTS = 2
-_ROUTEROS_RETRY_DELAY_SEC = 0.5
-_DEFAULT_ROUTEROS_PORT = 8728
-
+from .ai_analysis_service import analyze_device_context
+from .device_mining import DeviceMiner
 
 def _safe_decode(value: Any) -> Any:
     """Decodifica bytes a texto UTF-8 sin lanzar excepción."""
@@ -33,18 +27,6 @@ def _safe_decode(value: Any) -> Any:
         except UnicodeDecodeError:
             return value.decode("latin-1", errors="ignore")
     return value
-
-
-def _normalize_entry_dict(entry: Any) -> Dict[str, Any]:
-    """Asegura que la entrada del API sea un dict con claves/valores str."""
-    if isinstance(entry, dict):
-        normalized: Dict[str, Any] = {}
-        for key, val in entry.items():
-            key_str = str(_safe_decode(key))
-            normalized[key_str] = _safe_decode(val)
-        return normalized
-    return {"raw": _safe_decode(entry)}
-
 
 def _entry_timestamp_to_iso(entry: Dict[str, Any]) -> str:
     """Convierte marcas temporales de RouterOS a ISO8601 (UTC naive)."""
@@ -93,7 +75,6 @@ def _entry_timestamp_to_iso(entry: Dict[str, Any]) -> str:
 
     return now.isoformat()
 
-
 def _safe_parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
     """Convierte cadenas ISO8601 en datetime o retorna None si falla."""
     if not value:
@@ -112,384 +93,163 @@ def _safe_parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
                 continue
     return None
 
-
-def _topic_to_log_level(topic: str) -> Optional[str]:
-    if not topic:
-        return None
-    topic_lower = topic.lower()
-    for level in ("error", "warning", "info", "debug"):
-        if level in topic_lower:
-            return level
-    return None
-
-
-def _resolve_routeros_port(device: Device) -> int:
-    for attr in ("ros_api_port", "api_port", "routeros_port", "port"):
-        value = getattr(device, attr, None)
-        if isinstance(value, str) and value.isdigit():
-            value = int(value)
-        if isinstance(value, int) and value > 0:
-            if attr == "port" and value == getattr(Config, "ROS_SSH_PORT", 22):
-                continue
-            return value
-    return getattr(Config, "ROS_API_PORT", _DEFAULT_ROUTEROS_PORT) or _DEFAULT_ROUTEROS_PORT
-
-
-def _resolve_socket_timeout() -> int:
-    raw = os.getenv("MT_TIMEOUT_SEC")
-    if raw:
-        try:
-            timeout = int(raw)
-            return timeout if timeout > 0 else 5
-        except ValueError:
-            logging.warning("monitoring: MT_TIMEOUT_SEC inválido, usando 5s de timeout")
-    return 5
-
-
-def _fetch_router_logs_via_api(device: Device) -> List[Dict[str, Any]]:
-    """Abre una sesión RouterOS API, ejecuta /log/print y transforma la respuesta."""
-    host = getattr(device, "ip_address", None) or getattr(device, "host", None)
-    if not host:
-        logging.warning("monitoring: device_id=%s sin host configurado, omitiendo consulta de logs", device.id)
-        return []
-
-    try:
-        username = decrypt_secret(device.username_encrypted)
-        password = decrypt_secret(device.password_encrypted)
-    except Exception as exc:  # noqa: BLE001
-        logging.error("monitoring: no se pudieron descifrar credenciales device_id=%s: %s", device.id, exc)
-        return []
-
-    try:
-        from routeros_api import RouterOsApiPool
-        from routeros_api.exceptions import (
-            RouterOsApiCommunicationError,
-            RouterOsApiConnectionError,
-            RouterOsApiError,
-        )
-    except ImportError:
-        logging.warning("monitoring: routeros_api no instalado; instala routeros-api para habilitar logs")
-        return []
-
-    port = _resolve_routeros_port(device)
-    timeout = _resolve_socket_timeout()
-
-    formatted_entries: List[Dict[str, Any]] = []
-
-    for attempt in range(1, _ROUTEROS_MAX_ATTEMPTS + 1):
-        pool = None
-        attempt_entries: List[Dict[str, Any]] = []
-        try:
-            pool = RouterOsApiPool(
-                host,
-                username=username,
-                password=password,
-                port=port,
-                plaintext_login=True,
-                use_ssl=False,
-                socket_timeout=timeout,
-            )
-            api = pool.get_api()
-            raw_entries = api.call("/log/print") or []
-            if isinstance(raw_entries, dict):
-                raw_entries = raw_entries.get("ret", [])
-
-            for raw_entry in raw_entries:
-                decoded = _normalize_entry_dict(raw_entry)
-                attempt_entries.append(
-                    {
-                        "timestamp": _entry_timestamp_to_iso(decoded),
-                        "message": str(decoded.get("message") or decoded.get("msg") or "").strip(),
-                        "topic": str(decoded.get("topics") or decoded.get("topic") or "").strip(),
-                        "raw": decoded,
-                    }
-                )
-
-            formatted_entries = attempt_entries
-            logging.debug(
-                "monitoring: routeros_api obtuvo %s logs device_id=%s host=%s",
-                len(formatted_entries),
-                device.id,
-                host,
-            )
-            break
-        except (
-            RouterOsApiCommunicationError,
-            RouterOsApiConnectionError,
-            RouterOsApiError,
-            OSError,
-        ) as exc:  # noqa: PERF203
-            logging.warning(
-                "monitoring: intento %s/%s routeros_api falló device_id=%s host=%s: %s",
-                attempt,
-                _ROUTEROS_MAX_ATTEMPTS,
-                device.id,
-                host,
-                exc,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logging.warning(
-                "monitoring: error inesperado consultando routeros_api device_id=%s host=%s: %s",
-                device.id,
-                host,
-                exc,
-            )
-        finally:
-            if pool:
-                try:
-                    pool.disconnect()
-                except Exception:  # noqa: BLE001
-                    logging.debug("monitoring: error cerrando pool RouterOS device_id=%s", device.id)
-
-        if formatted_entries:
-            break
-
-        if attempt < _ROUTEROS_MAX_ATTEMPTS:
-            time.sleep(_ROUTEROS_RETRY_DELAY_SEC)
-
-    return formatted_entries
-
-
-def _build_mock_logs(device: Device) -> List[Dict[str, Any]]:
-    now = datetime.utcnow()
-    base_messages = [
-        ("Monitoreo simulado activo", "info"),
-        ("Tráfico de prueba procesado sin errores", "debug"),
-        ("Sin eventos críticos detectados", "info"),
-    ]
-    return [
-        {
-            "raw_log": f"[mock] {message}",
-            "timestamp_equipo": now,
-            "log_level": level,
-            "device_id": device.id,
-            "tenant_id": device.tenant_id,
-        }
-        for message, level in base_messages
-    ]
-
-
-def get_router_logs(device: Device, since_ts: Optional[datetime] = None) -> List[Dict[str, Any]]:
-    """Obtiene logs RouterOS normalizados sin propagar errores.
-
-    Flujo:
-    1. Detecta dispositivos de prueba (`is_mock`/`is_test` o host "dummy") y retorna logs simulados.
-    2. Para dispositivos reales abre una sesión RouterOS API con `routeros_api.RouterOsApiPool`.
-    3. Ejecuta `/log/print`, transforma cada entrada y filtra por `since_ts` cuando es posible.
-    4. Cualquier error de conexión/autenticación se registra a nivel WARNING y la función retorna [].
-
-    Args:
-        device: Dispositivo con credenciales cifradas.
-        since_ts: Timestamp UTC opcional para descartar logs antiguos (si la marca temporal se puede parsear).
-
-    Returns:
-        Lista de dicts listos para persistir en `LogEntry`. Nunca lanza excepciones.
-    """
-    try:
-        if device is None:
-            logging.warning("monitoring: se solicitó get_router_logs con device=None")
-            return []
-
-        host_value = getattr(device, "ip_address", None) or getattr(device, "host", None) or ""
-        mock_flag = bool(getattr(device, "is_mock", False) or getattr(device, "is_test", False))
-        if isinstance(host_value, str) and host_value.lower() == "dummy":
-            mock_flag = True
-
-        if mock_flag:
-            logging.debug("monitoring: devolviendo logs simulados para device_id=%s", device.id)
-            return _build_mock_logs(device)
-
-        raw_entries = _fetch_router_logs_via_api(device)
-        if not raw_entries:
-            return []
-
-        limit = getattr(Config, "MONITORING_LOG_LIMIT", 200) or 200
-        normalized: List[Dict[str, Any]] = []
-
-        for entry in raw_entries:
-            message = entry.get("message") or ""
-            topic = entry.get("topic") or ""
-            raw_data = entry.get("raw")
-
-            raw_text = message.strip()
-            if topic:
-                if raw_text:
-                    raw_text = f"[{topic}] {raw_text}".strip()
-                else:
-                    raw_text = topic.strip()
-
-            if not raw_text:
-                if isinstance(raw_data, dict):
-                    raw_text = str(raw_data).strip()
-                elif raw_data is not None:
-                    raw_text = str(raw_data).strip()
-
-            if not raw_text:
-                continue
-
-            timestamp_iso = entry.get("timestamp")
-            timestamp_dt = _safe_parse_iso_datetime(timestamp_iso)
-
-            include_due_since = True
-            if since_ts and timestamp_dt:
-                include_due_since = timestamp_dt >= since_ts
-
-            if not include_due_since:
-                continue
-
-            normalized.append(
-                {
-                    "raw_log": raw_text,
-                    "timestamp_equipo": timestamp_dt,
-                    "log_level": _topic_to_log_level(topic),
-                    "device_id": device.id,
-                    "tenant_id": device.tenant_id,
-                }
-            )
-
-        if len(normalized) > limit:
-            normalized = normalized[-limit:]
-
-        if normalized:
-            logging.info(
-                "monitoring: routeros_api obtuvo %s logs device_id=%s",
-                len(normalized),
-                device.id,
-            )
-        else:
-            logging.info(
-                "monitoring: routeros_api retornó entradas sin contenido utilizable device_id=%s",
-                device.id,
-            )
-
-        return normalized
-
-    except Exception as exc:  # noqa: BLE001
-        logging.error("monitoring: error inesperado en get_router_logs device_id=%s: %s", getattr(device, "id", "?"), exc)
-        return []
-
-
 def analyze_and_generate_alerts(device: Device) -> None:
     """
-    Pipeline completo de monitoreo:
+    Pipeline completo de monitoreo Forense:
     
-    1) Obtiene logs del router (get_router_logs)
-    2) Persiste en LogEntry (bulk insert)
-    3) Analiza con IA (analyze_logs: heuristic/deepseek según config)
-    4) Crea Alerts evitando duplicados en ventana corta
-    
-    Maneja errores de red/IA sin romper el flujo.
+    1) Minería de datos profunda (DeviceMiner).
+    2) Persistencia de Logs en LogEntry.
+    3) Análisis Forense IA (DeepSeek via AIProvider).
+    4) Generación de Alerta unificada (Reporte Forense).
     """
     try:
-        # Paso 1: Obtener logs del router
-        items = get_router_logs(device)
+        # Paso 1: Minería de Datos
+        miner = DeviceMiner(device)
+        data = miner.mine()
         
-        if not items:
-            logging.info(f"monitoring: sin logs nuevos device_id={device.id}")
+        if "error" in data:
+            logging.error(f"monitoring: Error minando datos device_id={device.id}: {data['error']}")
             return
-        
+
         now = datetime.utcnow()
         
-        # Paso 2: Persistencia en bulk
+        # Paso 2: Persistencia de Logs (bulk)
+        logs_raw = data.get("logs", [])
+
+        # Obtener el último timestamp de log de este device para deduplicar
+        last_log = (LogEntry.query
+                    .filter_by(device_id=device.id)
+                    .order_by(LogEntry.timestamp_equipo.desc())
+                    .first())
+        last_ts = last_log.timestamp_equipo if last_log else None
+
         entries: List[LogEntry] = []
-        for itm in items:
-            raw = itm.get("raw_log", "")
-            ts = itm.get("timestamp_equipo") or now
-            level = itm.get("log_level")
+
+        # The miner returns raw logs from API. We need to normalize them for DB.
+        # miner._get_logs returns dicts from routeros_api.
+        for log_item in logs_raw:
+            # We assume log_item is a dict from routeros_api
+            msg = log_item.get("message", "")
+            topics = log_item.get("topics", "")
             
-            if not raw:
-                continue
+            # Parse timestamp using the robust helper
+            ts_iso = _entry_timestamp_to_iso(log_item)
+            ts_dt = _safe_parse_iso_datetime(ts_iso) or now
             
+            # Deduplication: Skip if older or equal to last known log timestamp
+            if last_ts and ts_dt <= last_ts:
+                # To be safer against exact timestamp collisions of different logs,
+                # we could also check content hash, but timestamp > last_ts is a standard simple approach.
+                # However, within the same second, we might lose logs.
+                # Ideally, we should check existence of (device_id, timestamp_equipo, raw_log).
+                # For performance, we'll stick to strict > if last_ts is recent.
+                # Or we can do a quick existence check in memory if bulk is small.
+                pass
+
+            # Since strict > might miss logs in same second, let's allow >= but check message.
+            # Efficient dedupe for small batches:
+            if last_ts and ts_dt < last_ts:
+                 continue
+
+            # If equal, check if exists in DB (expensive? typically 50 logs max)
+            if last_ts and ts_dt == last_ts:
+                 exists = (LogEntry.query
+                           .filter_by(device_id=device.id, timestamp_equipo=ts_dt)
+                           .filter(LogEntry.raw_log.like(f"%{msg}%")) # partial match
+                           .first())
+                 if exists:
+                     continue
+
             le = LogEntry(
                 tenant_id=device.tenant_id,
                 device_id=device.id,
-                raw_log=raw,
-                log_level=level,
-                timestamp_equipo=ts
+                raw_log=f"[{topics}] {msg}" if topics else msg,
+                log_level="info", # Default, can parse from topics
+                timestamp_equipo=ts_dt
             )
-            # Forzar created_at explícito (aunque hay server_default)
-            le.created_at = now
             entries.append(le)
         
         if entries:
             db.session.add_all(entries)
-            db.session.flush()  # Asegura IDs antes del análisis
+            db.session.flush()
             logging.info(f"monitoring: persistidos {len(entries)} logs device_id={device.id}")
         
         # Paso 3: Análisis IA
-        # Preparamos lista estructurada para la IA (mejor contexto)
-        # items ya tiene {raw_log, timestamp_equipo, log_level, ...}
-        log_list = []
-        for itm in items:
-            log_list.append({
-                "timestamp": itm.get("timestamp_equipo"),
-                "log_message": itm.get("raw_log"),
-                "log_level": itm.get("log_level"),
-                "equipment_name": device.name
-            })
+        analysis_result = analyze_device_context(data)
         
-        # Preparar contexto del dispositivo para DeepSeek
-        device_context = {
-            "name": device.name,
-            "ip": device.ip_address
-        }
+        # Paso 4: Crear Alerta (Reporte)
+        # We create a single alert summarizing the findings
+        analysis_text = analysis_result.get("analysis", "")
+        recommendations = analysis_result.get("recommendations", [])
         
-        suggestions: List[Dict[str, Any]] = []
-        try:
-            # analyze_logs maneja provider automáticamente (heuristic/deepseek/auto)
-            suggestions = analyze_logs(log_list, device_context=device_context)
-            logging.info(f"monitoring: IA generó {len(suggestions)} sugerencias device_id={device.id}")
-        except Exception as ex:
-            logging.warning(f"monitoring: analyze_logs falló device_id={device.id}: {ex}")
+        if not analysis_text:
+            logging.info("monitoring: IA no retornó análisis.")
+            return
+
+        # Determine severity based on content or heuristics
+        # Simple keyword matching for severity
+        severity = "Aviso"
+        lower_analysis = analysis_text.lower()
+        if "critical" in lower_analysis or "failure" in lower_analysis or "attack" in lower_analysis:
+            severity = "Alerta Severa"
+        if "warning" in lower_analysis or "high" in lower_analysis:
+            severity = "Alerta Menor"
         
-        # Paso 4: Crear alertas (dedupe simple en ventana corta)
-        created_alerts = 0
-        window_start = now - timedelta(minutes=10)  # TODO: parametrizar ventana
+        # Check heuristics from data for override
+        heuristics = data.get("heuristics", [])
+        if any("critical" in h.lower() for h in heuristics):
+            severity = "Alerta Crítica"
+
+        rec_text = "; ".join(recommendations)
         
-        for sug in suggestions:
-            try:
-                estado = sug.get("estado")
-                titulo = sug.get("titulo")
-                descripcion = sug.get("descripcion")
-                accion = sug.get("accion_recomendada")
-                
-                if not all([estado, titulo, descripcion, accion]):
-                    continue
-                
-                # Dedupe: mismo device + estado + titulo en ventana
-                exists = (Alert.query
-                         .filter_by(tenant_id=device.tenant_id, device_id=device.id, estado=estado, titulo=titulo)
-                         .filter(Alert.created_at >= window_start)
-                         .first())
-                
-                if exists:
-                    logging.debug(f"monitoring: alerta duplicada skip device_id={device.id}: {titulo}")
-                    continue
-                
-                alert = Alert(
-                    tenant_id=device.tenant_id,
-                    device_id=device.id,
-                    estado=estado,
-                    titulo=titulo,
-                    descripcion=descripcion,
-                    accion_recomendada=accion,
-                    status_operativo="Pendiente",
-                    comentario_ultimo=None
-                )
-                alert.created_at = now
-                alert.updated_at = now
-                
-                db.session.add(alert)
-                created_alerts += 1
-            except Exception as ex:
-                logging.error(f"monitoring: error creando alerta device_id={device.id}: {ex}")
-        
-        if created_alerts > 0:
-            logging.info(f"monitoring: creadas {created_alerts} alertas device_id={device.id}")
-        
-        # Commit todo de una vez (logs + alertas)
+        # Dedupe check: don't spam if identical report recently
+        window_start = now - timedelta(hours=1)
+        exists = (Alert.query
+                 .filter_by(tenant_id=device.tenant_id, device_id=device.id)
+                 .filter(Alert.titulo == "Reporte Forense IA")
+                 .filter(Alert.created_at >= window_start)
+                 .first())
+
+        if exists:
+             # Update existing? Or just skip.
+             # If severity changed, maybe update.
+             logging.debug(f"monitoring: Reporte reciente existe, saltando alerta device_id={device.id}")
+        else:
+            alert = Alert(
+                tenant_id=device.tenant_id,
+                device_id=device.id,
+                estado=severity,
+                titulo="Reporte Forense IA",
+                descripcion=analysis_text[:512],
+                accion_recomendada=rec_text[:255] or "Ver detalles en dashboard",
+                status_operativo="Pendiente",
+                comentario_ultimo="Generado automáticamente por DeepSeek"
+            )
+            db.session.add(alert)
+            logging.info(f"monitoring: Alerta Forense creada device_id={device.id}")
+
         db.session.commit()
         
     except Exception as ex:
         logging.error(f"monitoring: error general device_id={device.id}: {ex}")
         db.session.rollback()
+
+# Helper for manual log fetching if needed by other services (retained for compatibility)
+def get_router_logs(device: Device, since_ts: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    """
+    Legacy wrapper using DeviceMiner to fetch logs.
+    """
+    miner = DeviceMiner(device)
+    data = miner.mine()
+    # Normalize back to old structure if needed
+    logs = []
+    for l in data.get("logs", []):
+         ts = _safe_parse_iso_datetime(_entry_timestamp_to_iso(l)) or datetime.utcnow()
+         logs.append({
+             "raw_log": l.get("message"),
+             "timestamp_equipo": ts,
+             "log_level": "info",
+             "device_id": device.id,
+             "tenant_id": device.tenant_id
+         })
+    return logs

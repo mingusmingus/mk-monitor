@@ -1,0 +1,81 @@
+/* Input Components Styles */
+
+.input-group {
+  position: relative;
+  margin-bottom: 16px;
+  width: 100%;
+}
+
+.custom-input {
+  width: 100%;
+  background-color: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  padding: 10px 12px;
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+  transition: all 0.2s ease;
+  outline: none;
+  min-height: 40px;
+}
+
+.custom-input.has-label {
+  padding-top: 18px;
+  padding-bottom: 6px;
+}
+
+.custom-input:focus {
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+  background-color: var(--color-bg-primary);
+}
+
+.custom-label {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: var(--font-size-md);
+  color: var(--color-text-muted);
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+
+.custom-input.has-label + .custom-label {
+  top: 12px; /* Center when input has padding-top */
+}
+
+/* Floating label logic */
+.custom-input:focus + .custom-label,
+.custom-input:not(:placeholder-shown) + .custom-label {
+  top: 8px;
+  transform: translateY(0);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-accent-primary);
+}
+
+.input-error {
+  border-color: var(--color-accent-danger) !important;
+}
+
+.input-success {
+  border-color: var(--color-accent-secondary) !important;
+}
+
+.input-helper-text {
+  font-size: 11px;
+  color: var(--color-accent-danger);
+  margin-top: 4px;
+  display: block;
+}
+
+.input-adornment {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+}

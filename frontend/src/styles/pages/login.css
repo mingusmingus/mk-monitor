@@ -1,0 +1,104 @@
+/* Login Page Styles */
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-bg-secondary) 0%, var(--color-bg-tertiary) 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Dynamic gradient orb/blur effect */
+.auth-orb {
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--color-accent-primary) 0%, transparent 70%);
+  opacity: 0.15;
+  filter: blur(80px);
+  z-index: 0;
+  animation: floatOrb 20s ease-in-out infinite;
+}
+
+@keyframes floatOrb {
+  0%, 100% { transform: translate(-20%, -20%) scale(1); }
+  50% { transform: translate(20%, 20%) scale(1.1); }
+}
+
+.auth-card {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 440px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 40px;
+  box-shadow: var(--shadow-lg);
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.auth-logo {
+  width: 48px;
+  height: 48px;
+  background: var(--color-accent-primary);
+  border-radius: 12px;
+  margin: 0 auto 16px;
+  display: grid;
+  place-items: center;
+  color: white;
+  font-weight: 900;
+  font-size: 24px;
+}
+
+.auth-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 8px;
+}
+
+.auth-subtitle {
+  font-size: var(--font-size-md);
+  color: var(--color-text-muted);
+}
+
+.custom-checkbox {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  background: var(--color-bg-tertiary);
+}
+
+.custom-checkbox:checked {
+  background: var(--color-accent-primary);
+  border-color: var(--color-accent-primary);
+}
+
+.custom-checkbox:checked::after {
+  content: '✓';
+  font-size: 12px;
+  color: white;
+  font-weight: bold;
+}
+
+.auth-error {
+  color: var(--color-accent-danger);
+  font-size: 13px;
+  background: var(--color-bg-tertiary);
+  padding: 8px;
+  border-radius: 4px;
+  border-left: 3px solid var(--color-accent-danger);
+}

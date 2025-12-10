@@ -8,7 +8,7 @@ export default function ThemeToggle() {
   return (
     <button
       type="button"
-      className="btn glass"
+      className="btn btn-ghost"
       onClick={toggleTheme}
       aria-pressed={isDark}
       aria-label={isDark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}

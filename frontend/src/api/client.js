@@ -1,5 +1,4 @@
 // Cliente HTTP base (Axios) para consumir el backend Flask.
-// DEBUG: logs con prefijo [HTTP] (remover tras estabilizar).
 import axios from 'axios'
 
 const client = axios.create({
@@ -13,7 +12,7 @@ client.interceptors.request.use((config) => {
     config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${t}`
   }
-  console.debug('[HTTP] request', config.url, 'Auth?', !!t)
+  // console.debug('[HTTP] request', config.url, 'Auth?', !!t)
   return config
 })
 
@@ -50,23 +49,23 @@ client.interceptors.response.use(
         return Promise.reject(error)
       }
       if (isAuthRoute) {
-        console.debug('[HTTP] 401 en ruta de auth, ignorado')
+        // console.debug('[HTTP] 401 en ruta de auth, ignorado')
         return Promise.reject(error)
       }
       if (!t) {
-        console.debug('[HTTP] 401 sin token (pre-auth), ignorar')
+        // console.debug('[HTTP] 401 sin token (pre-auth), ignorar')
         return Promise.reject(error)
       }
       if (!authReady) {
         if (!config.__retry401) {
-          console.debug('[HTTP] 401 con token pero authReady=false (race). Reintentando...')
+          // console.debug('[HTTP] 401 con token pero authReady=false (race). Reintentando...')
           await new Promise(r => setTimeout(r, 120))
           config.__retry401 = true
           return client(config)
         }
-        console.debug('[HTTP] 401 tras reintento race. Marcando expirado.')
+        // console.debug('[HTTP] 401 tras reintento race. Marcando expirado.')
       }
-      console.warn('[HTTP] 401 definitivo. Disparando evento auth:expired')
+      // console.warn('[HTTP] 401 definitivo. Disparando evento auth:expired')
       if (!alreadyHandled('401-default')) {
         window.dispatchEvent(new CustomEvent('auth:expired'))
       }

@@ -417,7 +417,16 @@ def analyze_and_generate_alerts(device: Device) -> None:
             logging.info(f"monitoring: persistidos {len(entries)} logs device_id={device.id}")
         
         # Paso 3: Análisis IA
-        log_list = [e.raw_log for e in entries]
+        # Preparamos lista estructurada para la IA (mejor contexto)
+        # items ya tiene {raw_log, timestamp_equipo, log_level, ...}
+        log_list = []
+        for itm in items:
+            log_list.append({
+                "timestamp": itm.get("timestamp_equipo"),
+                "log_message": itm.get("raw_log"),
+                "log_level": itm.get("log_level"),
+                "equipment_name": device.name
+            })
         
         # Preparar contexto del dispositivo para DeepSeek
         device_context = {

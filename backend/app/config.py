@@ -43,14 +43,14 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # JWT y expiración
-    JWT_SECRET_KEY = os.getenv("JWT_SECRET", "changeme-insecure")
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET")
     TOKEN_EXP_MINUTES = int(os.getenv("JWT_EXPIRES_MINUTES", os.getenv("TOKEN_EXP_MINUTES", "60")))
  
     # Cifrado simétrico para credenciales de routers (usar Fernet)
     ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")  # sin default inseguro
 
     # Otros
-    CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
+    CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173")
     DEBUG = os.getenv("DEBUG", "1") == "1"
 
     # AI / DeepSeek (no incluir claves en código; leer del entorno)
@@ -112,8 +112,10 @@ def validate_encryption_key(key: str) -> bool:
 # Validación estricta de secretos en producción
 if not is_dev():
     # JWT_SECRET_KEY no debe estar vacío ni ser placeholder
-    if not Config.JWT_SECRET_KEY or str(Config.JWT_SECRET_KEY).lower().startswith("changeme"):
-        raise RuntimeError("Config: JWT_SECRET_KEY inválido en producción (vacío o placeholder).")
+    if not Config.JWT_SECRET_KEY:
+        raise RuntimeError("Config: JWT_SECRET_KEY inválido en producción (vacío).")
+    if str(Config.JWT_SECRET_KEY).lower().startswith("changeme"):
+         raise RuntimeError("Config: JWT_SECRET_KEY inválido en producción (placeholder detectado).")
     # ENCRYPTION_KEY debe ser una clave Fernet válida (base64 urlsafe, 32 bytes)
     if not validate_encryption_key(Config.ENCRYPTION_KEY):
         raise RuntimeError("Config: ENCRYPTION_KEY inválida; se requiere Fernet base64 urlsafe de 32 bytes.")

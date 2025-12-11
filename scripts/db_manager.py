@@ -71,13 +71,25 @@ def get_backend_dir():
         log_error(f"No se encontró el directorio backend en: {backend_dir}")
         sys.exit(1)
 
+    # Validar que existe migrations/
+    migrations_dir = os.path.join(backend_dir, "migrations")
+    if not os.path.isdir(migrations_dir):
+        log_error(f"No se encontró el directorio migrations en: {migrations_dir}")
+        log_info("Considere ejecutar: alembic init migrations")
+        sys.exit(1)
+
     return backend_dir
+
+def get_alembic_args(backend_dir) -> List[str]:
+    """Retorna los argumentos base para alembic incluyendo el config explícito."""
+    ini_path = os.path.join(backend_dir, "alembic.ini")
+    return [sys.executable, "-m", "alembic", "-c", ini_path]
 
 def check_connection(backend_dir):
     """Verifica la conexión a la base de datos (simulada o vía alembic current)."""
     log_info("Verificando conexión y estado actual...")
     # 'alembic current' muestra la revisión actual. Si falla, hay problemas de conexión o config.
-    cmd = [sys.executable, "-m", "alembic", "current"]
+    cmd = get_alembic_args(backend_dir) + ["current"]
     return run_command(cmd, cwd=backend_dir)
 
 def make_migration(message, backend_dir):
@@ -87,13 +99,13 @@ def make_migration(message, backend_dir):
         return 1
 
     log_info(f"Creando migración con mensaje: '{message}'")
-    cmd = [sys.executable, "-m", "alembic", "revision", "--autogenerate", "-m", message]
+    cmd = get_alembic_args(backend_dir) + ["revision", "--autogenerate", "-m", message]
     return run_command(cmd, cwd=backend_dir)
 
 def upgrade_db(backend_dir):
     """Aplica las migraciones pendientes (upgrade head)."""
     log_info("Aplicando migraciones pendientes...")
-    cmd = [sys.executable, "-m", "alembic", "upgrade", "head"]
+    cmd = get_alembic_args(backend_dir) + ["upgrade", "head"]
     return run_command(cmd, cwd=backend_dir)
 
 def main():

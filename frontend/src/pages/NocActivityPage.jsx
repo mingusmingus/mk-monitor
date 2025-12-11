@@ -3,9 +3,10 @@ import useFetchAlerts from '../hooks/useFetchAlerts.js'
 import Card from '../components/ui/Card.jsx'
 
 /**
- * NOC Activity Page Redesign
- * - Focus on "En curso" alerts
- * - High contrast or clear visibility for NOC screens
+ * NocActivityPage (Rediseñada)
+ *
+ * Página diseñada para pantallas de monitoreo (NOC).
+ * Enfocada en incidentes activos ("En curso") con alta visibilidad.
  */
 export default function NocActivityPage() {
   const { alerts, loading } = useFetchAlerts({ status_operativo: 'En curso' })
@@ -23,7 +24,7 @@ export default function NocActivityPage() {
         {!loading && alerts.length === 0 && (
           <Card style={{ padding: '48px', textAlign: 'center', gridColumn: '1 / -1' }}>
             <div style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-accent-secondary)' }}>
-                Todo normal. Sin incidentes en curso.
+                [OK] Operación normal. Sin incidentes en curso.
             </div>
           </Card>
         )}

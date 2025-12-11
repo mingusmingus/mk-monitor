@@ -1,27 +1,33 @@
 """
-Modelo Device (router MikroTik):
+Modelo de Dispositivo (Router Mikrotik).
 
-Campos esperados:
-- id (PK)
-- tenant_id (FK)
-- nombre_amigable
-- ip
-- puerto
-- username (cifrado en reposo)
-- password (cifrado en reposo)
-- salud (verde|amarillo|rojo calculado por alertas)
-- created_at, updated_at
+Define la estructura para almacenar la información de los dispositivos de red gestionados.
+Maneja información de conexión y credenciales cifradas.
 """
 
 from ..db import db
 from sqlalchemy.sql import func
 
-# IMPORTANTE:
-# Las credenciales de Mikrotik (username/password) se almacenan cifradas
-# usando una clave simétrica (ENCRYPTION_KEY) con cryptography.Fernet.
-# No guardar nunca planos. Desencriptar sólo en uso operativo controlado.
-
 class Device(db.Model):
+    """
+    Representa un dispositivo de red (Router) gestionado por el sistema.
+
+    Nota: Las credenciales (usuario y contraseña) se almacenan cifradas en la base de datos
+    utilizando cifrado simétrico (Fernet). Nunca deben almacenarse en texto plano.
+
+    Attributes:
+        id (int): Identificador único del dispositivo.
+        tenant_id (int): Identificador del Tenant propietario.
+        name (str): Nombre descriptivo o hostname del dispositivo.
+        ip_address (str): Dirección IP de gestión.
+        port (int): Puerto de gestión (SSH/API).
+        username_encrypted (str): Nombre de usuario cifrado.
+        password_encrypted (str): Contraseña cifrada.
+        firmware_version (str): Versión del firmware detectada.
+        location (str): Ubicación física o lógica del dispositivo.
+        wan_type (str): Tipo de conexión WAN.
+        created_at (datetime): Fecha de registro del dispositivo.
+    """
     __tablename__ = "devices"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -36,5 +42,6 @@ class Device(db.Model):
     wan_type = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=func.now())
 
+    # Relaciones
     alerts = db.relationship("Alert", backref="device", lazy=True)
     logs = db.relationship("LogEntry", backref="device", lazy=True)

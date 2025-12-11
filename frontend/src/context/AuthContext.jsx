@@ -3,13 +3,14 @@ import { login as apiLogin } from '../api/authApi.js'
 import client from '../api/client.js'
 
 /**
- * Contexto de autenticación.
+ * Contexto de Autenticación.
+ *
+ * Gestiona el estado global de la sesión del usuario, incluyendo:
  * - token (JWT)
- * - role
- * - tenantStatus
- * - authReady (evita race de primeras llamadas protegidas)
- * - expiredSession (modal para expiración y confirmación)
- * DEBUG: logs con prefijo [Auth] (remover tras estabilizar).
+ * - role (rol del usuario)
+ * - tenantStatus (estado de pago de la cuenta)
+ * - authReady (bandera de inicialización)
+ * - expiredSession (estado para mostrar modal de re-login)
  */
 export const AuthContext = createContext({
   token: null,
@@ -24,11 +25,11 @@ export const AuthContext = createContext({
 })
 
 const TOKEN_KEY = 'auth_token'
-// Claves legacy que podemos migrar
+// Claves legadas para migración transparente
 const LEGACY_KEYS = ['access_token', 'token']
 
 export function AuthProvider({ children }) {
-  // Migración: si existe clave legacy y falta nueva -> mover.
+  // Inicialización: Recuperar token de localStorage, migrando claves antiguas si es necesario
   const initialToken = (() => {
     const existing = localStorage.getItem(TOKEN_KEY)
     if (existing) return existing
@@ -49,7 +50,7 @@ export function AuthProvider({ children }) {
   const [authReady, setAuthReady] = useState(() => !!initialToken)
   const [expiredSession, setExpiredSession] = useState(false)
 
-  // Aplicar header si token inicial ya existe
+  // Sincronizar token con headers de axios y estado global
   useEffect(() => {
     if (token) {
       client.defaults.headers.common.Authorization = `Bearer ${token}`
@@ -57,7 +58,7 @@ export function AuthProvider({ children }) {
     }
   }, [token])
 
-  // Persistencias
+  // Persistencia de Token
   useEffect(() => {
     if (token) {
       localStorage.setItem(TOKEN_KEY, token)
@@ -66,15 +67,22 @@ export function AuthProvider({ children }) {
     }
   }, [token])
 
+  // Persistencia de Rol
   useEffect(() => {
     if (role) localStorage.setItem('role', role)
     else localStorage.removeItem('role')
   }, [role])
 
+  // Persistencia de Estado de Tenant
   useEffect(() => {
     if (tenantStatus) localStorage.setItem('tenant_status', tenantStatus)
   }, [tenantStatus])
 
+  /**
+   * Inicia sesión en el sistema.
+   * @param {string} email
+   * @param {string} password
+   */
   const login = useCallback(async (email, password) => {
     try {
         const res = await apiLogin(email, password)
@@ -88,7 +96,6 @@ export function AuthProvider({ children }) {
           window.__AUTH_READY = true
           setAuthReady(true)
           setExpiredSession(false)
-          console.debug('[Auth] login ok, token prefix:', jwt.slice(0, 16))
           return true
         }
         return false
@@ -97,6 +104,9 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  /**
+   * Cierra la sesión del usuario y limpia el estado local.
+   */
   const logout = useCallback(() => {
     setToken(null)
     setRole(null)
@@ -107,14 +117,18 @@ export function AuthProvider({ children }) {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem('role')
     localStorage.removeItem('tenant_status')
-    console.debug('[Auth] logout')
   }, [])
 
+  /**
+   * Marca la sesión actual como expirada.
+   */
   const markExpired = useCallback(() => {
-    console.warn('[Auth] sesión marcada como expirada')
     setExpiredSession(true)
   }, [])
 
+  /**
+   * Verifica la validez del token actual con el backend.
+   */
   const verify = useCallback(async () => {
     if (!token) return false
     try {
@@ -125,7 +139,7 @@ export function AuthProvider({ children }) {
     }
   }, [token])
 
-  // Listener para actualización del estado del tenant
+  // Listener: Actualización de estado del tenant desde interceptores HTTP
   useEffect(() => {
     function handleTenantStatus(e) {
       const status = e.detail?.status
@@ -135,7 +149,7 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('tenant:status', handleTenantStatus)
   }, [])
 
-  // Listener para expiración disparada por interceptor HTTP
+  // Listener: Expiración de sesión desde interceptores HTTP
   useEffect(() => {
     function handleExpired() {
       markExpired()

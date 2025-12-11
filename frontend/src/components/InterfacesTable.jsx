@@ -3,17 +3,18 @@ import PropTypes from 'prop-types'
 
 /**
  * InterfacesTable
- * Displays a table of network interfaces with status and stats.
- * Includes a "Physical State" column with visual warnings for errors.
+ *
+ * Componente que muestra una tabla con las interfaces de red del dispositivo.
+ * Incluye una columna de "Estado Físico" que alerta visualmente sobre errores.
  *
  * Props:
- * - interfaces: Array of interface objects
+ * - interfaces: Array (Lista de objetos de interfaz).
  */
 const InterfacesTable = ({ interfaces }) => {
   if (!interfaces || interfaces.length === 0) {
     return (
       <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-        No interfaces detected.
+        [INFO] No se detectaron interfaces.
       </div>
     )
   }
@@ -33,15 +34,11 @@ const InterfacesTable = ({ interfaces }) => {
         </thead>
         <tbody>
           {interfaces.map((iface, index) => {
-             // Logic for Physical State Error
-             // Assuming stats are in iface.stats or directly on iface if flattened.
-             // The prompt says: const hasPhysicalError = stats.fcs_error > 0 || stats.collisions > 0;
-             // I'll assume `stats` property exists or check root properties if flattened.
-             // Common mikrotik structure might put stats in a sub-object or flat.
-             // I'll check both with nullish coalescing.
+             // Lógica para detectar Errores Físicos
+             // Verifica si existen errores de FCS o colisiones en las estadísticas.
              const stats = iface.stats || iface
 
-             const fcsErrors = Number(stats.fcs_error ?? 0)
+             const fcsErrors = Number(stats.rx_fcs_error ?? stats.fcs_error ?? 0)
              const collisions = Number(stats.collisions ?? 0)
              const hasPhysicalError = fcsErrors > 0 || collisions > 0
 
@@ -61,7 +58,7 @@ const InterfacesTable = ({ interfaces }) => {
                     )}
                 </td>
                 <td style={{ padding: '12px 8px', color: 'var(--color-text-secondary)' }}>{iface.type}</td>
-                <td style={{ padding: '12px 8px', fontFamily: 'monospace' }}>{iface.mac_address}</td>
+                <td style={{ padding: '12px 8px', fontFamily: 'monospace' }}>{iface.mac_address || iface.mac}</td>
                 <td style={{ padding: '12px 8px' }}>{iface.mtu}</td>
                 <td style={{ padding: '12px 8px', color: 'var(--color-text-secondary)' }}>
                     <div>TX: {formatBytes(iface.tx_byte)}</div>
@@ -69,12 +66,12 @@ const InterfacesTable = ({ interfaces }) => {
                 </td>
                 <td style={{ padding: '12px 8px', textAlign: 'center' }}>
                     {hasPhysicalError ? (
-                        <span title={errorTooltip} style={{ cursor: 'help', color: 'var(--color-accent-warning)' }}>
-                            ⚠️
+                        <span title={errorTooltip} style={{ cursor: 'help', color: 'var(--color-accent-warning)', fontWeight: 'bold' }}>
+                            [WARNING]
                         </span>
                     ) : (
-                        <span title="OK" style={{ color: 'var(--color-accent-secondary)' }}>
-                            ✓
+                        <span title="OK" style={{ color: 'var(--color-accent-secondary)', fontWeight: 'bold' }}>
+                            [OK]
                         </span>
                     )}
                 </td>
@@ -87,6 +84,9 @@ const InterfacesTable = ({ interfaces }) => {
   )
 }
 
+/**
+ * Formatea bytes a unidades legibles.
+ */
 function formatBytes(bytes, decimals = 2) {
     if (!+bytes) return '0 B'
     const k = 1024

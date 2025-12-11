@@ -5,8 +5,10 @@ import useAuth from '../hooks/useAuth.js'
 import Card from '../components/ui/Card.jsx'
 
 /**
- * Dashboard Page Redesign
- * - CSS: src/styles/pages/dashboard.css
+ * Dashboard Page (Rediseñado)
+ *
+ * Página principal que muestra métricas operativas clave, estado global de salud
+ * y resumen de incidentes.
  */
 export default function DashboardPage() {
   const { token, authReady } = useAuth()
@@ -14,7 +16,7 @@ export default function DashboardPage() {
   const { devices, loading: loadingHealth } = useDeviceHealth()
   const [slaMin, setSlaMin] = useState(null)
 
-  // Computed metrics
+  // Métricas Computadas
   const activeAlerts = alerts.length
   const criticalAlerts = alerts.filter(a => a.estado === 'Alerta Crítica').length
 
@@ -28,7 +30,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!authReady || !token) return
 
-    // Simulate SLA fetch or real fetch
+    // Simulación o fetch real de métricas SLA
     let mounted = true
     ;(async () => {
       try {
@@ -41,8 +43,8 @@ export default function DashboardPage() {
             if (mounted) setSlaMin(data?.tiempo_promedio_resolucion_severa_min ?? 0)
         }
       } catch (e) {
-        // Silent fail or mock
-        if (mounted) setSlaMin(0.0) // fallback
+        // Fallo silencioso o mock
+        if (mounted) setSlaMin(0.0)
       }
     })()
 
@@ -52,26 +54,26 @@ export default function DashboardPage() {
   return (
     <div className="dashboard fade-in">
 
-      {/* Header */}
+      {/* Encabezado */}
       <header>
         <div className="dashboard-header-meta">
-          Overview / Dashboard
+          Visión General / Dashboard
         </div>
         <h1 className="h1">Dashboard Operativo</h1>
       </header>
 
-      {/* Metrics Grid */}
+      {/* Grilla de Métricas */}
       <div className="dashboard-grid-metrics">
 
-        {/* Active Alerts */}
+        {/* Alertas Activas */}
         <MetricCard
             title="Alertas Activas"
             value={activeAlerts}
-            trend="+2% vs ayer" // Mock trend
+            trend="+2% vs ayer" // Trend Simulado
             color={activeAlerts > 0 ? 'warning' : 'neutral'}
         />
 
-        {/* Critical Alerts */}
+        {/* Alertas Críticas */}
         <MetricCard
             title="Críticas"
             value={criticalAlerts}
@@ -79,7 +81,7 @@ export default function DashboardPage() {
             color={criticalAlerts > 0 ? 'danger' : 'success'}
         />
 
-        {/* Global Health */}
+        {/* Salud Global */}
         <Card statusColor={globalHealth === 'critical' ? 'danger' : globalHealth === 'warning' ? 'warning' : 'success'}>
             <div className="metric-title">Salud Global</div>
             <div className="global-health-status">
@@ -94,10 +96,10 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Main Content Grid */}
+      {/* Grilla de Contenido Principal */}
       <div className="dashboard-grid-content">
 
-        {/* SLA Section (Left/Top) */}
+        {/* Sección SLA (Izquierda/Arriba) */}
         <div style={{ gridColumn: 'span 2' }}>
             <Card elevated>
                 <div className="sla-card-header">
@@ -114,14 +116,14 @@ export default function DashboardPage() {
                          </div>
                     </div>
                 </div>
-                {/* Mock Chart Area */}
+                {/* Área de Gráfico Mock */}
                 <div className="sla-chart-area">
-                    <div style={{ position: 'absolute', bottom: 8, left: 8, fontSize: '11px', color: 'var(--color-text-muted)' }}>Ultimos 7 días</div>
+                    <div style={{ position: 'absolute', bottom: 8, left: 8, fontSize: '11px', color: 'var(--color-text-muted)' }}>Últimos 7 días</div>
                 </div>
             </Card>
         </div>
 
-        {/* Device Status List (Right/Bottom) */}
+        {/* Lista de Estado de Equipos (Derecha/Abajo) */}
         <div style={{ gridColumn: 'span 2' }}>
             <Card>
                 <div className="equipment-table-header">
@@ -169,7 +171,8 @@ export default function DashboardPage() {
   )
 }
 
-// Sub-components for Dashboard
+// Sub-componentes para el Dashboard
+
 function MetricCard({ title, value, trend, color }) {
     const colors = {
         warning: 'var(--color-accent-warning)',

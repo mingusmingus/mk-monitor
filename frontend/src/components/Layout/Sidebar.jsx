@@ -2,7 +2,7 @@ import React, { useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import ThemeToggle from './ThemeToggle'
 
-// Icons (Feather Icons inspired SVGs)
+// Iconos SVG (Estilo Feather Icons)
 const Icons = {
   Dashboard: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>,
   Devices: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>,
@@ -12,6 +12,16 @@ const Icons = {
   Logout: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
 }
 
+/**
+ * Sidebar de Navegación.
+ *
+ * Barra lateral que contiene los enlaces principales de la aplicación.
+ * Responsivo: se comporta como drawer en dispositivos móviles.
+ *
+ * Props:
+ * - isOpen: boolean (Estado de apertura en móvil).
+ * - onClose: Function (Callback para cerrar).
+ */
 export default function Sidebar({ isOpen, onClose }) {
   const items = [
     { to: '/', label: 'Dashboard', icon: Icons.Dashboard },
@@ -21,7 +31,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { to: '/subscription', label: 'Suscripción', icon: Icons.Subscription }
   ]
 
-  // Close on ESC
+  // Cerrar al presionar ESC
   useEffect(() => {
     const handleEsc = (e) => {
       if (isOpen && e.key === 'Escape') onClose()
@@ -32,7 +42,7 @@ export default function Sidebar({ isOpen, onClose }) {
 
   return (
     <>
-      {/* Mobile Backdrop */}
+      {/* Fondo oscuro para móvil (Backdrop) */}
       <div 
         className={`sidebar-backdrop ${isOpen ? 'visible' : ''}`} 
         onClick={onClose}
@@ -54,7 +64,7 @@ export default function Sidebar({ isOpen, onClose }) {
 
         <nav className="sidebar-nav">
             <div style={{ textTransform: 'uppercase', fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600, padding: '0 12px 8px' }}>
-                Menu
+                Menú
             </div>
           {items.map((i) => (
             <NavLink
@@ -69,8 +79,6 @@ export default function Sidebar({ isOpen, onClose }) {
             </NavLink>
           ))}
         </nav>
-
-        {/* Footer actions for mobile specifically if needed, otherwise handled in header */}
       </aside>
     </>
   )

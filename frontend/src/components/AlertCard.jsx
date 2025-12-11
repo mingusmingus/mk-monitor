@@ -2,9 +2,14 @@ import React from 'react'
 import Button from './ui/Button.jsx'
 
 /**
- * AlertCard (Refactored)
- * - Uses new Card styling via CSS classes or composition
- * - Adapts to new design system
+ * AlertCard (Refactorizado)
+ *
+ * Componente para mostrar una tarjeta de alerta individual en el listado.
+ * Adaptado al sistema de diseño con bordes de color según severidad.
+ *
+ * Props:
+ * - alert: Object (Objeto de alerta).
+ * - onAction: Function (Callback para acciones de botones).
  */
 export default function AlertCard({ alert, onAction }) {
   const isCritical = alert?.estado === 'Alerta Crítica'

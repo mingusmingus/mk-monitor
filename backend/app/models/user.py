@@ -1,14 +1,8 @@
 """
-Modelo User (usuarios internos por tenant):
+Modelo de Usuario.
 
-Campos esperados:
-- id (PK)
-- tenant_id (FK -> Tenant)
-- email (único por tenant)
-- password_hash (bcrypt)
-- role ("admin" | "noc")
-- is_active
-- created_at, updated_at
+Define la estructura de datos para los usuarios del sistema, pertenecientes a un Tenant específico.
+Maneja autenticación, roles y metadatos básicos.
 """
 
 from ..db import db
@@ -16,6 +10,19 @@ from sqlalchemy.sql import func
 from sqlalchemy import UniqueConstraint
 
 class User(db.Model):
+    """
+    Representa un usuario dentro del sistema, asociado a un Tenant.
+
+    Attributes:
+        id (int): Identificador único del usuario.
+        tenant_id (int): Referencia al Tenant al que pertenece el usuario.
+        email (str): Correo electrónico del usuario (único por Tenant).
+        password_hash (str): Hash de la contraseña del usuario.
+        role (str): Rol del usuario en el sistema ('admin', 'noc').
+        full_name (str): Nombre completo del usuario.
+        created_at (datetime): Fecha y hora de creación.
+        updated_at (datetime): Fecha y hora de última actualización.
+    """
     __tablename__ = "users"
     __table_args__ = (
         UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),

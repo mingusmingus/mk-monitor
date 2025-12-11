@@ -1,18 +1,25 @@
 """
-Modelo AlertStatusHistory (histórico de estados para SLA):
+Modelo Histórico de Estado de Alertas.
 
-Campos esperados:
-- id (PK)
-- alert_id (FK)
-- old_status, new_status
-- changed_by (user_id o sistema)
-- changed_at (timestamp)
+Registra los cambios de estado operativo de una alerta para fines de auditoría
+y cálculo de SLA (Acuerdos de Nivel de Servicio).
 """
 
 from ..db import db
 from sqlalchemy.sql import func
 
 class AlertStatusHistory(db.Model):
+    """
+    Entidad que representa un registro en el historial de cambios de estado de una alerta.
+
+    Attributes:
+        id (int): Identificador único del registro histórico.
+        alert_id (int): Referencia a la alerta asociada.
+        previous_status_operativo (str): Estado operativo anterior.
+        new_status_operativo (str): Nuevo estado operativo.
+        changed_by_user_id (int): Identificador del usuario que realizó el cambio.
+        changed_at (datetime): Fecha y hora del cambio.
+    """
     __tablename__ = "alert_status_history"
 
     id = db.Column(db.Integer, primary_key=True)

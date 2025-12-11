@@ -8,8 +8,10 @@ import Input from '../components/ui/Input.jsx'
 import Card from '../components/ui/Card.jsx'
 
 /**
- * Devices Page Redesign
- * - CSS: src/styles/pages/devices.css
+ * Devices Page (Rediseñada)
+ *
+ * Página para listar y gestionar dispositivos de red.
+ * Permite alternar vistas (Tabla/Cuadrícula), filtrar y crear nuevos equipos.
  */
 export default function DevicesPage() {
   const [devices, setDevices] = useState([])
@@ -17,7 +19,7 @@ export default function DevicesPage() {
   const [viewMode, setViewMode] = useState('table') // 'table' | 'grid'
   const [searchTerm, setSearchTerm] = useState('')
 
-  // Form State
+  // Estado del Formulario
   const [form, setForm] = useState({ name: '', ip_address: '', port: 22, username: '', password: '' })
   const [isFormVisible, setIsFormVisible] = useState(false)
   const [showUpsell, setShowUpsell] = useState(false)
@@ -32,7 +34,7 @@ export default function DevicesPage() {
       const res = await getDevices()
       setDevices(res.data || [])
     } catch (e) {
-      console.error('Error loading devices', e)
+      console.error('Error cargando dispositivos', e)
     } finally {
       setLoading(false)
     }
@@ -70,7 +72,7 @@ export default function DevicesPage() {
 
   return (
     <div className="devices-page fade-in">
-      {/* Header & Controls */}
+      {/* Encabezado & Controles */}
       <div className="devices-header-container">
         <div>
             <h1 className="h1">Equipos</h1>
@@ -89,12 +91,14 @@ export default function DevicesPage() {
                 <button
                     onClick={() => setViewMode('table')}
                     className={`view-toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
+                    title="Vista de Tabla"
                 >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                 </button>
                 <button
                     onClick={() => setViewMode('grid')}
                     className={`view-toggle-btn ${viewMode === 'grid' ? 'active' : ''}`}
+                    title="Vista de Cuadrícula"
                 >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                 </button>
@@ -106,7 +110,7 @@ export default function DevicesPage() {
         </div>
       </div>
 
-      {/* Add Device Form (Collapsible) */}
+      {/* Formulario de Alta (Colapsable) */}
       {isFormVisible && (
         <Card elevated className="fade-in">
             <h3 className="h3" style={{ marginBottom: '16px' }}>Agregar Nuevo Dispositivo</h3>
@@ -124,7 +128,7 @@ export default function DevicesPage() {
         </Card>
       )}
 
-      {/* Device List */}
+      {/* Listado de Dispositivos */}
       {viewMode === 'table' ? (
           <Card style={{ padding: 0, overflow: 'hidden' }}>
             <div className="table-container">

@@ -6,7 +6,9 @@ import Button from '../components/ui/Button.jsx'
 import Card from '../components/ui/Card.jsx'
 
 /**
- * Subscription Page Redesign
+ * Subscription Page (Rediseñada)
+ *
+ * Página de gestión de la suscripción, uso de recursos y facturación.
  */
 export default function SubscriptionPage() {
   const [data, setData] = useState(null)
@@ -65,7 +67,7 @@ export default function SubscriptionPage() {
                     <span style={{ fontWeight: 600 }}>Uso de Dispositivos</span>
                     <span style={{ fontWeight: 600 }}>{data.used} / {data.max_devices}</span>
                 </div>
-                {/* Progress Bar */}
+                {/* Barra de Progreso */}
                 <div style={{ height: '8px', background: 'var(--color-border)', borderRadius: '4px', overflow: 'hidden' }}>
                     <div style={{
                         height: '100%',

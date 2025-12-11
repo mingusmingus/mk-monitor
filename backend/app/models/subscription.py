@@ -1,20 +1,25 @@
 """
-Modelo Subscription (gestión de plan comercial):
+Modelo de Suscripción.
 
-Campos esperados:
-- id (PK)
-- tenant_id (FK)
-- plan (BASICMAAT | INTERMAAT | PROMAAT)
-- status (active | past_due | canceled)
-- current_period_start, current_period_end
-- external_ref (id de proveedor de pagos)
-- created_at, updated_at
+Gestiona los detalles del plan comercial contratado por un Tenant, incluyendo
+límites de recursos y vigencia.
 """
 
 from ..db import db
 from sqlalchemy.sql import func
 
 class Subscription(db.Model):
+    """
+    Representa la suscripción activa de un Tenant.
+
+    Attributes:
+        id (int): Identificador único de la suscripción.
+        tenant_id (int): Identificador del Tenant asociado.
+        plan_name (str): Nombre del plan comercial (ej. 'BASICMAAT').
+        max_devices (int): Límite máximo de dispositivos permitidos.
+        activo_hasta (datetime): Fecha de vencimiento de la suscripción.
+        created_at (datetime): Fecha de creación del registro.
+    """
     __tablename__ = "subscriptions"
 
     id = db.Column(db.Integer, primary_key=True)

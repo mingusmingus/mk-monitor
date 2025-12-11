@@ -6,8 +6,10 @@ import ThemeToggle from '../components/Layout/ThemeToggle.jsx'
 import { register as registerApi } from '../api/registerApi.js'
 
 /**
- * Signup Page Redesign
- * - CSS: src/styles/pages/login.css (Shared with Login for consistency)
+ * SignupPage (Rediseñada)
+ *
+ * Página de registro de nuevos usuarios.
+ * Comparte estilos con la página de Login para consistencia visual.
  */
 export default function SignupPage() {
   const navigate = useNavigate()
@@ -96,11 +98,11 @@ export default function SignupPage() {
 
   return (
     <div className="auth-page">
-      {/* Decor */}
+      {/* Decoración */}
       <div className="auth-orb" style={{ top: 0, left: 0 }}></div>
       <div className="auth-orb" style={{ bottom: 0, right: 0, animationDelay: '-10s', background: 'radial-gradient(circle, var(--color-accent-secondary) 0%, transparent 70%)' }}></div>
 
-      {/* Theme Toggle */}
+      {/* Control de Tema */}
       <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 20 }}>
         <ThemeToggle />
       </div>

@@ -2,9 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { getAlerts } from '../api/alertApi.js'
 import useAuth from '../hooks/useAuth.js'
 
-// Hook para obtener alertas con filtros, manejando loading/error.
-// Gating estricto por authReady + token.
-// DEBUG: logs con prefijo [Hook] (remover tras estabilizar).
+/**
+ * Hook personalizado para consultar alertas.
+ *
+ * Permite filtrar alertas, refrescar datos y gestionar estados de carga.
+ *
+ * @param {Object} initialFilters - Filtros iniciales (estado, dispositivo, etc.).
+ * @returns {Object} { alerts, loading, error, refetch, setFilters }
+ */
 export default function useFetchAlerts(initialFilters = {}) {
   const [alerts, setAlerts] = useState([])
   const [filters, setFilters] = useState(initialFilters)
@@ -13,8 +18,8 @@ export default function useFetchAlerts(initialFilters = {}) {
   const { token, authReady } = useAuth()
 
   const fetchAlerts = useCallback(async () => {
+    // Verificación estricta de autenticación
     if (!authReady || !token) {
-      console.debug('[Hook] useFetchAlerts skip (authReady/token no listos)')
       return
     }
     setLoading(true)

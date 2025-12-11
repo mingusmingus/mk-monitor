@@ -1,15 +1,15 @@
 """
-Device Mining Service.
+Servicio de Minería de Datos de Dispositivos (Device Mining).
 
-Responsible for connecting to Mikrotik devices and mining deep forensic data.
-Handles version differences (v6 vs v7), error handling, and data structuring.
+Responsable de establecer conexión con dispositivos Mikrotik y extraer datos forenses profundos.
+Maneja diferencias de versión (RouterOS v6 vs v7), gestión de errores y estructuración de datos.
 """
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import time
 
-# Attempt to import routeros_api, handle missing dependency gracefully
+# Intento de importación de routeros_api, manejo elegante de dependencia faltante
 try:
     from routeros_api import RouterOsApiPool
     from routeros_api.exceptions import RouterOsApiError
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 class DeviceMiner:
     """
-    Miner class to extract forensic data from a specific device.
+    Clase minera encargada de extraer datos forenses de un dispositivo específico.
     """
     def __init__(self, device: Device):
         self.device = device
@@ -37,24 +37,26 @@ class DeviceMiner:
         self.ros_version_major = None
 
     def _resolve_port(self) -> int:
+        """Determina el puerto API correcto a utilizar."""
         for attr in ("ros_api_port", "api_port", "routeros_port", "port"):
             value = getattr(self.device, attr, None)
             if value and str(value).isdigit():
                 val_int = int(value)
-                if attr == "port" and val_int == 22: # Skip SSH port if mixed up
+                if attr == "port" and val_int == 22: # Omitir puerto SSH si hubo confusión
                     continue
                 return val_int
         return 8728
 
     def _connect(self):
+        """Establece la conexión con el dispositivo vía RouterOS API."""
         if not ROUTEROS_AVAILABLE:
-            raise RuntimeError("routeros_api library not installed.")
+            raise RuntimeError("[ERROR] La librería routeros_api no está instalada.")
 
         try:
             username = decrypt_secret(self.device.username_encrypted)
             password = decrypt_secret(self.device.password_encrypted)
         except Exception as e:
-            raise ValueError(f"Credential decryption failed: {e}")
+            raise ValueError(f"[ERROR] Fallo en descifrado de credenciales: {e}")
 
         self.pool = RouterOsApiPool(
             self.host,
@@ -68,6 +70,7 @@ class DeviceMiner:
         self.api = self.pool.get_api()
 
     def _disconnect(self):
+        """Cierra la conexión con el dispositivo."""
         if self.pool:
             try:
                 self.pool.disconnect()
@@ -76,11 +79,14 @@ class DeviceMiner:
 
     def mine(self) -> Dict[str, Any]:
         """
-        Main entry point to mine data.
-        Returns a structured dictionary with all gathered contexts.
+        Punto de entrada principal para la minería de datos.
+
+        Returns:
+            Dict[str, Any]: Diccionario estructurado con todos los contextos recopilados
+                            (contexto, salud, interfaces, capa3, seguridad, logs, heurística).
         """
         if not self.host:
-            logger.warning(f"Device {self.device.id} has no host.")
+            logger.warning(f"[WARNING] Dispositivo {self.device.id} no tiene host definido.")
             return {}
 
         data = {
@@ -91,7 +97,7 @@ class DeviceMiner:
             "interfaces": [],
             "layer3": {},
             "security": {},
-            "wireless": [], # New field for Wifi
+            "wireless": [], # Nuevo campo para clientes Wifi
             "logs": [],
             "heuristics": []
         }
@@ -99,69 +105,69 @@ class DeviceMiner:
         try:
             self._connect()
 
-            # 1. Context Base (Identity, Resource, Routerboard, Package)
+            # 1. Contexto Base (Identidad, Recursos, Routerboard)
             data["context"] = self._get_base_context()
 
-            # Determine version for subsequent commands
+            # Determinar versión para comandos subsiguientes
             version_str = data["context"].get("version", "")
             self.ros_version_major = 7 if version_str.startswith("7") else 6
 
-            # 2. Health
+            # 2. Salud (Health)
             data["health"] = self._get_health()
 
-            # 3. Layer 1 & 2 (Interfaces)
+            # 3. Capa 1 & 2 (Interfaces)
             data["interfaces"] = self._get_interfaces()
 
-            # Wireless/Wifi clients
+            # Clientes Inalámbricos/Wifi
             data["wireless"] = self._get_wireless_clients()
 
-            # 4. Layer 3 & Topology
+            # 4. Capa 3 & Topología
             data["layer3"] = self._get_layer3()
 
-            # 5. Security
+            # 5. Seguridad
             data["security"] = self._get_security()
 
-            # 6. Logs (Standard /log/print)
+            # 6. Logs (Estándar /log/print)
             data["logs"] = self._get_logs()
 
         except Exception as e:
-            logger.error(f"Mining failed for device {self.device.id}: {e}")
+            logger.error(f"[ERROR] Falló la minería para dispositivo {self.device.id}: {e}")
             data["error"] = str(e)
         finally:
             self._disconnect()
 
-        # 7. Local Forensic Heuristics (Pre-processing)
+        # 7. Heurística Forense Local (Pre-procesamiento)
         data["heuristics"] = self._apply_forensic_heuristics(data)
 
         return data
 
     def _safe_get(self, resource_path: str, params: Dict = None) -> List[Dict]:
-        """Helper to safely execute an API call."""
+        """Helper para ejecutar una llamada API de forma segura."""
         try:
             res = self.api.get_resource(resource_path)
             if params:
                 return res.get(**params)
             return res.get()
         except Exception as e:
-            logger.debug(f"Failed to get {resource_path}: {e}")
+            logger.debug(f"[DEBUG] Falló al obtener {resource_path}: {e}")
             return []
 
     def _safe_call(self, resource_path: str, command: str, arguments: Dict = None) -> List[Dict]:
-        """Helper to call a command (e.g. print with specific args)"""
+        """Helper para invocar un comando (ej. print con argumentos específicos)."""
         try:
             res = self.api.get_resource(resource_path)
             return res.call(command, arguments or {})
         except Exception as e:
-            logger.debug(f"Failed to call {command} on {resource_path}: {e}")
+            logger.debug(f"[DEBUG] Falló al llamar {command} en {resource_path}: {e}")
             return []
 
     def _get_base_context(self) -> Dict[str, Any]:
         context = {}
-        # Identity
+        # Identidad
         identity = self._safe_get('/system/identity')
-        context["identity"] = identity[0].get('name') if identity else "Unknown"
+        context["identity"] = identity[0].get('name') if identity else "Desconocido"
 
-        # Resources
+        # Recursos
         resources = self._safe_get('/system/resource')
         if resources:
             res = resources[0]
@@ -229,20 +235,20 @@ class DeviceMiner:
 
     def _get_wireless_clients(self) -> List[Dict[str, Any]]:
         # v6: /interface wireless registration-table
-        # v7: /interface wifiwave2 registration-table OR /interface wifi registration-table
+        # v7: /interface wifiwave2 registration-table O /interface wifi registration-table
         clients = []
 
         if self.ros_version_major == 6:
             clients = self._safe_get('/interface/wireless/registration-table')
         else:
-            # Try wifiwave2 first, then wifi, then legacy wireless
+            # Intentar wifiwave2 primero, luego wifi, luego legacy wireless
             clients = self._safe_get('/interface/wifiwave2/registration-table')
             if not clients:
                  clients = self._safe_get('/interface/wifi/registration-table')
             if not clients:
                  clients = self._safe_get('/interface/wireless/registration-table')
 
-        # Simplify output
+        # Simplificar salida
         simple_clients = []
         for c in clients:
             simple_clients.append({
@@ -257,48 +263,24 @@ class DeviceMiner:
     def _get_layer3(self) -> Dict[str, Any]:
         l3 = {}
 
-        # IP Addresses
+        # Direcciones IP
         ips = self._safe_get('/ip/address')
         l3["addresses"] = [
             {"address": i.get("address"), "interface": i.get("interface")}
             for i in ips
         ]
 
-        # Neighbors
+        # Vecinos (Neighbors)
         neighbors = self._safe_get('/ip/neighbor')
         l3["neighbors"] = [
             {"interface": n.get("interface"), "ip": n.get("address"), "mac": n.get("mac-address"), "identity": n.get("identity")}
             for n in neighbors
         ]
 
-        # Routes: /ip/route/print count-only
-        # In API, getting resource counts directly is not standard in 'get'.
-        # We try to use the 'print' command with 'count-only' argument if supported by python wrapper.
-        # But 'call' returns list.
-        # Workaround: Fetch stats from /routing/route if v7, or just count visible.
-        # Or execute `/ip/route/print count-only` via safe_call
+        # Rutas
+        l3["route_summary"] = "Conteo omitido (Limitación API)"
 
-        # Try count-only via call. Note: parameters in call are usually dict.
-        # api.get_resource('/ip/route').call('print', {'count-only': ''})
-
-        route_count = 0
-        try:
-            # This returns a list containing one dict like { "ret": 123 } or similar depending on version/lib
-            res = self._safe_call('/ip/route', 'print', {'count-only': ''})
-            # routeros_api might not parse the integer return of count-only well, usually it expects list of items.
-            # If it fails, we default to "Unknown".
-            if res and isinstance(res, list) and 'ret' in res[0]:
-                 # Sometimes 'ret' is not there for count-only in API
-                 pass
-            # Fallback: if we can't count reliably without fetching all, we skip exact count.
-            # Instead, we check dynamic protocols presence.
-        except:
-            pass
-
-        l3["route_summary"] = "Count lookup skipped (API limitation)"
-
-        # Check for dynamic protocols (OSPF/BGP)
-        # We can check /routing/ospf/neighbor or /routing/bgp/session
+        # Detección de protocolos dinámicos (OSPF/BGP)
         dynamic_protocols = []
         if self._safe_get('/routing/ospf/neighbor') or self._safe_get('/routing/ospf/interface'):
             dynamic_protocols.append("OSPF")
@@ -312,10 +294,10 @@ class DeviceMiner:
     def _get_security(self) -> Dict[str, Any]:
         sec = {}
         # /ip/firewall/filter/print stats
-        # We just get the rules and look at bytes/packets
+        # Obtenemos reglas y sumamos bytes/paquetes de drops
         rules = self._safe_get('/ip/firewall/filter')
 
-        # Summarize dropped packets
+        # Resumir paquetes descartados (dropped)
         drop_count = 0
         for rule in rules:
             if rule.get("action") == "drop":
@@ -326,46 +308,43 @@ class DeviceMiner:
         return sec
 
     def _get_logs(self) -> List[Dict[str, Any]]:
-        # Reuse existing logic logic or call API directly
-        # We limit to last 50 logs for context
+        # Limitamos a los últimos 50 logs para contexto
         logs = self._safe_call('/log', 'print')
-        # Sort or slice might be needed if API returns all
-        # Usually API returns all buffer.
         return logs[-50:] if logs else []
 
     def _apply_forensic_heuristics(self, data: Dict[str, Any]) -> List[str]:
         findings = []
 
-        # 1. CPU & Traffic (DDoS/Loop)
+        # 1. CPU & Tráfico (DDoS/Bucle)
         cpu = 0
         try:
             cpu = int(data["context"].get("cpu_load", 0))
         except: pass
 
-        # 2. Interface Errors
+        # 2. Errores de Interfaz
         for iface in data.get("interfaces", []):
             name = iface.get("name")
             fcs = int(iface.get("rx_fcs_error") or 0)
             if fcs > 0:
-                findings.append(f"Interface {name} has {fcs} FCS errors. Suggests physical cable/connector damage.")
+                findings.append(f"Interfaz {name} tiene {fcs} errores FCS. Sugiere daño físico en cable/conector.")
 
             rx_drop = int(iface.get("rx_drop") or 0)
             if rx_drop > 100:
-                findings.append(f"Interface {name} has high RX drops ({rx_drop}). Possible congestion or flow control issue.")
+                findings.append(f"Interfaz {name} tiene altos descartes RX ({rx_drop}). Posible congestión o problema de control de flujo.")
 
-        # 3. Voltage/Power
+        # 3. Voltaje/Energía
         health = data.get("health", {})
         voltage = health.get("voltage")
         if voltage:
             try:
                 v = float(voltage)
-                # Heuristic: < 10V is suspicious for most 12V/24V systems
+                # Heurística: < 10V es sospechoso para sistemas de 12V/24V
                 if v < 10:
-                    findings.append(f"Low voltage detected: {v}V. Check Power Supply.")
+                    findings.append(f"Bajo voltaje detectado: {v}V. Verificar fuente de alimentación.")
             except: pass
 
-        # 4. CPU High
+        # 4. CPU Crítico
         if cpu > 90:
-            findings.append("CPU is critical (>90%).")
+            findings.append("Uso de CPU crítico (>90%).")
 
         return findings

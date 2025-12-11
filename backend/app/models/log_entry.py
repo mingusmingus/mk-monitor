@@ -1,25 +1,30 @@
 """
-Modelo LogEntry (entrada de log crudo/normalizado):
+Modelo de Entrada de Log.
 
-Campos esperados:
-- id (PK)
-- tenant_id (FK)
-- device_id (FK)
-- raw (texto del log)
-- normalized (opcional)
-- timestamp_log (cuando ocurrió en el equipo)
-- created_at
+Almacena los registros de log individuales recopilados de los dispositivos.
+Utilizado para auditoría forense y análisis histórico.
 """
 
 from ..db import db
 from sqlalchemy.sql import func
 
 class LogEntry(db.Model):
+    """
+    Representa una línea de log individual proveniente de un dispositivo.
+
+    Attributes:
+        id (int): Identificador único de la entrada de log.
+        tenant_id (int): Identificador del Tenant propietario.
+        device_id (int): Identificador del dispositivo origen.
+        raw_log (str): Contenido crudo del log tal como se recibió.
+        log_level (str): Nivel de severidad extraído (ej. 'info', 'error').
+        timestamp_equipo (datetime): Fecha y hora del evento según el dispositivo.
+        created_at (datetime): Fecha y hora de ingestión en el sistema.
+    """
     __tablename__ = "logs"
     __table_args__ = (
         db.Index("ix_logs_device_ts", "device_id", "timestamp_equipo"),
-        # TODO: evaluar índice compuesto por (tenant_id, device_id, timestamp_equipo) para queries por rango,
-        #       garantizando timestamps en UTC (timezone-aware) de extremo a extremo.
+        # Índice optimizado para consultas temporales por dispositivo
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -30,5 +35,3 @@ class LogEntry(db.Model):
     log_level = db.Column(db.String(32), nullable=True)
     timestamp_equipo = db.Column(db.DateTime(timezone=True), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=func.now())
-
-# Nota: Este histórico debe tener índice por (device_id, timestamp_equipo) para consultas por rango.

@@ -1,14 +1,15 @@
 """
-Rutas de logs:
+Rutas para la gestión y consulta de Logs.
 
-- Consulta histórica con filtros de fecha y dispositivo.
+Provee endpoints para consultar el histórico de logs de dispositivos,
+con soporte para filtrado y exportación a formatos CSV y PDF.
 """
 from flask import Blueprint, request, jsonify, g, Response
 from ..auth.decorators import require_auth
 from ..models.log_entry import LogEntry
 from ..models.device import Device
 from ..models.tenant import Tenant
-from ..utils.export_pdf import generate_logs_pdf  # Ruta legacy (format/export)
+from ..utils.export_pdf import generate_logs_pdf
 from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
@@ -26,29 +27,30 @@ logger = logging.getLogger(__name__)
 @limiter.limit("30/minute; 200/hour", override_defaults=False)
 def device_logs(device_id: int):
     """
-    Devuelve logs del dispositivo dentro del tenant.
+    Obtiene los logs históricos de un dispositivo específico.
 
-    Query params:
-      - limit (5|10|20; default 10) para JSON/CSV
-      - fecha_inicio (ISO 8601 UTC)
-      - fecha_fin (ISO 8601 UTC)
-      - format: csv | pdf (preferido)
-      - export: csv | pdf (compatibilidad legado)
+    Params:
+        device_id (int): Identificador del dispositivo.
 
-    Nota importante (timezone - prioridad BAJA):
-      Las fechas recibidas (fecha_inicio, fecha_fin) se interpretan en UTC.
-      El campo timestamp_equipo se almacena y consulta como timezone-aware (UTC).
+    Query Args:
+        limit (int): Límite de resultados para JSON/CSV (default 10).
+        fecha_inicio (str): Fecha inicio filtro ISO 8601 (UTC).
+        fecha_fin (str): Fecha fin filtro ISO 8601 (UTC).
+        format (str): Formato de salida ('pdf', 'csv', 'json').
+        query (str): Término de búsqueda en el contenido del log.
 
-    Seguridad:
-      - Valida propiedad del dispositivo por tenant.
-      - Mitigación CSV injection en export.
+    Returns:
+        Response:
+            - JSON con lista de logs (default).
+            - Archivo binario (PDF/CSV) si se solicita.
+            - 404 si el dispositivo no existe o no pertenece al tenant.
     """
-    # Validar propiedad del dispositivo (tenant)
+    # Validar propiedad del dispositivo
     owner = Device.query.filter_by(id=device_id, tenant_id=g.tenant_id).first()
     if not owner:
         return jsonify({"error": "Dispositivo no encontrado"}), 404
 
-    # Filtros por rango de tiempo (ISO 8601; robusto)
+    # Helper para parseo de fechas
     def _parse_iso(s: str):
         if not s:
             return None
@@ -61,7 +63,6 @@ def device_logs(device_id: int):
     fecha_inicio = _parse_iso(request.args.get("fecha_inicio"))
     fecha_fin = _parse_iso(request.args.get("fecha_fin"))
 
-    # NUEVO: soporte formato=formato (pdf) y filtros 'query', 'from', 'to'
     formato = (request.args.get("formato") or "").lower().strip()
     search = request.args.get("query", default="", type=str).strip()
 
@@ -82,10 +83,10 @@ def device_logs(device_id: int):
     rango_inicio = _parse_range_param(request.args.get("from"))
     rango_fin = _parse_range_param(request.args.get("to"))
 
-    # Selección de formato legacy existente (format/export)
+    # Soporte legacy para formato
     fmt = (request.args.get("format") or request.args.get("export") or "").lower().strip()
 
-    # --- NUEVA RUTA PDF (prioridad sobre legacy) ---
+    # --- Exportación PDF ---
     if formato == "pdf":
         q_new = LogEntry.query.filter_by(tenant_id=g.tenant_id, device_id=device_id)
         if rango_inicio:
@@ -98,9 +99,9 @@ def device_logs(device_id: int):
         logs_new = q_new.all()
 
         pdf_bytes = _build_logs_pdf(logs_new, device_id)
-        # Logging de auditoría (sin contenido del PDF)
+
         logger.info(
-            "export_pdf form=formato tenant_id=%s device_id=%s count=%s", g.tenant_id, device_id, len(logs_new)
+            "[INFO] export_pdf form=formato tenant_id=%s device_id=%s count=%s", g.tenant_id, device_id, len(logs_new)
         )
         filename = f"device_{device_id}_logs_{datetime.utcnow().strftime('%Y%m%d')}.pdf"
         return Response(
@@ -109,9 +110,8 @@ def device_logs(device_id: int):
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    # Ruta PDF (permite mayor límite configurable)
+    # Legacy PDF (mantiene compatibilidad)
     if fmt == "pdf":
-        # Límite máximo PDF configurable (default 5000)
         max_rows = int(os.getenv("LOG_PDF_MAX_ROWS", "5000"))
         pdf_limit = request.args.get("limit", default=max_rows, type=int)
         if not isinstance(pdf_limit, int) or pdf_limit <= 0:
@@ -126,11 +126,9 @@ def device_logs(device_id: int):
         q_pdf = q_pdf.order_by(LogEntry.timestamp_equipo.desc())
         logs_pdf = q_pdf.limit(pdf_limit).all()
 
-        # Tenant name para encabezado
         tenant = Tenant.query.filter_by(id=g.tenant_id).first()
         tenant_name = tenant.name if tenant else f"tenant#{g.tenant_id}"
 
-        # Generar PDF
         pdf_bytes = generate_logs_pdf(
             tenant_name=tenant_name,
             device=owner,
@@ -139,7 +137,7 @@ def device_logs(device_id: int):
             fecha_fin=fecha_fin.isoformat() if fecha_fin else None,
         )
         logger.info(
-            "export_pdf form=legacy tenant_id=%s device_id=%s count=%s", g.tenant_id, device_id, len(logs_pdf)
+            "[INFO] export_pdf form=legacy tenant_id=%s device_id=%s count=%s", g.tenant_id, device_id, len(logs_pdf)
         )
 
         filename = f"logs_{datetime.utcnow().date().isoformat()}_device_{device_id}.pdf"
@@ -149,14 +147,12 @@ def device_logs(device_id: int):
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    # --- CSV y JSON (comportamiento existente) ---
-    # limit en {5,10,20}
+    # --- Exportación CSV y JSON ---
     allowed_limits = {5, 10, 20}
     limit = request.args.get("limit", default=10, type=int)
     if limit not in allowed_limits:
         limit = 10
 
-    # Query aislada por tenant y device
     q = LogEntry.query.filter_by(tenant_id=g.tenant_id, device_id=device_id)
     if fecha_inicio:
         q = q.filter(LogEntry.timestamp_equipo >= fecha_inicio)
@@ -166,12 +162,12 @@ def device_logs(device_id: int):
     q = q.order_by(LogEntry.timestamp_equipo.desc())
     logs = q.limit(limit).all()
 
-    # CSV export (mantener comportamiento actual y compatibilidad con format=csv)
     export = request.args.get("export", "").lower().strip()
     if fmt == "csv":
         export = "csv"
+
     if export == "csv":
-        # Mitigación CSV injection: prefijar comilla simple si empieza con =, +, - o @
+        # Mitigación de inyección CSV
         def _csv_safe(s: str) -> str:
             if not s:
                 return ""
@@ -200,7 +196,7 @@ def device_logs(device_id: int):
             },
         )
 
-    # Respuesta JSON
+    # Respuesta JSON estándar
     result = [
         {
             "id": l.id,
@@ -215,13 +211,15 @@ def device_logs(device_id: int):
 
 
 def _build_logs_pdf(logs, device_id: int) -> bytes:
-    """Helper privado para construir PDF de logs.
+    """
+    Genera un archivo PDF con el reporte de logs.
 
-    Requisitos:
-      - Título: "Logs Dispositivo <device_id>" y fecha actual.
-      - Tabla (timestamp_equipo | log_level | raw_log truncado a 120 chars).
-      - Máx 45 filas por página (paginación manual).
-      - Mensaje si lista vacía.
+    Args:
+        logs (list): Lista de objetos LogEntry.
+        device_id (int): ID del dispositivo.
+
+    Returns:
+        bytes: Contenido binario del archivo PDF.
     """
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
@@ -258,7 +256,7 @@ def _build_logs_pdf(logs, device_id: int) -> bytes:
         return pdf
 
     for idx, l in enumerate(logs, 1):
-        # Nueva página si se excede
+        # Paginación
         if (idx - 1) % rows_per_page == 0 and idx != 1:
             c.showPage()
             page += 1
@@ -277,7 +275,7 @@ def _build_logs_pdf(logs, device_id: int) -> bytes:
         c.drawString(60 * mm, y, lvl)
         c.drawString(85 * mm, y, raw)
         y -= 5 * mm
-        if y < 20 * mm:  # margen inferior
+        if y < 20 * mm:  # Margen inferior
             c.showPage()
             page += 1
             y = _header(page)

@@ -6,6 +6,7 @@ Maneja diferencias de versión (RouterOS v6 vs v7), gestión de errores y estruc
 """
 import logging
 from typing import Dict, Any, List, Optional
+import re
 from datetime import datetime
 import time
 
@@ -77,6 +78,13 @@ class DeviceMiner:
             except:
                 pass
 
+    def collect_forensic_data(self) -> Dict[str, Any]:
+        """
+        Ejecuta la recolección forense inteligente de datos.
+        Alias mejorado de mine() con enfoque en seguridad y análisis profundo.
+        """
+        return self.mine()
+
     def mine(self) -> Dict[str, Any]:
         """
         Punto de entrada principal para la minería de datos.
@@ -105,7 +113,7 @@ class DeviceMiner:
         try:
             self._connect()
 
-            # 1. Contexto Base (Identidad, Recursos, Routerboard)
+            # 1. Contexto Base (Identidad, Recursos, Routerboard, Package)
             data["context"] = self._get_base_context()
 
             # Determinar versión para comandos subsiguientes
@@ -127,7 +135,7 @@ class DeviceMiner:
             # 5. Seguridad
             data["security"] = self._get_security()
 
-            # 6. Logs (Estándar /log/print)
+            # 6. Logs (Estándar /log/print, sanitizados)
             data["logs"] = self._get_logs()
 
         except Exception as e:
@@ -187,6 +195,10 @@ class DeviceMiner:
             context["serial_number"] = rb.get("serial-number")
             context["firmware"] = rb.get("current-firmware")
 
+        # Package (Nuevo para detectar v6 vs v7 de forma robusta)
+        packages = self._safe_get('/system/package')
+        context["packages"] = [p.get("name") for p in packages if not p.get("disabled") == "true"]
+
         return context
 
     def _get_health(self) -> Dict[str, Any]:
@@ -202,28 +214,40 @@ class DeviceMiner:
 
     def _get_interfaces(self) -> List[Dict[str, Any]]:
         # /interface/print stats-detail
+        # La API de python por defecto hace print detail con get()
         interfaces = self._safe_get('/interface')
         ethers = {e.get('name'): e for e in self._safe_get('/interface/ethernet')}
 
         enhanced_interfaces = []
         for iface in interfaces:
+            # Filtro de interfaces inactivas o irrelevantes
+            # Conservamos si: running=true OR tiene errores OR tiene trafico reciente
+            running = iface.get("running") == "true"
+            rx_fcs = int(iface.get("rx-fcs-error") or iface.get("fcs-error") or 0)
+            rx_byte = int(iface.get("rx-byte") or 0)
+            tx_byte = int(iface.get("tx-byte") or 0)
+
+            # Filtramos interfaces apagadas sin tráfico ni errores
+            if not running and rx_fcs == 0 and rx_byte == 0 and tx_byte == 0:
+                continue
+
             name = iface.get("name")
             eth_info = ethers.get(name, {})
 
             stats = {
                 "name": name,
                 "type": iface.get("type"),
-                "running": iface.get("running") == "true",
+                "running": running,
                 "disabled": iface.get("disabled") == "true",
-                "rx_byte": iface.get("rx-byte"),
-                "tx_byte": iface.get("tx-byte"),
+                "rx_byte": rx_byte,
+                "tx_byte": tx_byte,
                 "rx_error": iface.get("rx-error"),
                 "tx_error": iface.get("tx-error"),
                 "rx_drop": iface.get("rx-drop"),
                 "tx_drop": iface.get("tx-drop"),
                 "fp_rx_byte": iface.get("fp-rx-byte"),
                 "fp_tx_byte": iface.get("fp-tx-byte"),
-                "rx_fcs_error": iface.get("rx-fcs-error") or iface.get("fcs-error"),
+                "rx_fcs_error": rx_fcs,
 
                 "auto_negotiation": eth_info.get("auto-negotiation"),
                 "speed": eth_info.get("speed"),
@@ -273,7 +297,7 @@ class DeviceMiner:
         # Vecinos (Neighbors)
         neighbors = self._safe_get('/ip/neighbor')
         l3["neighbors"] = [
-            {"interface": n.get("interface"), "ip": n.get("address"), "mac": n.get("mac-address"), "identity": n.get("identity")}
+            {"interface": n.get("interface"), "ip": n.get("address"), "mac": n.get("mac-address"), "identity": n.get("identity"), "platform": n.get("platform")}
             for n in neighbors
         ]
 
@@ -294,7 +318,6 @@ class DeviceMiner:
     def _get_security(self) -> Dict[str, Any]:
         sec = {}
         # /ip/firewall/filter/print stats
-        # Obtenemos reglas y sumamos bytes/paquetes de drops
         rules = self._safe_get('/ip/firewall/filter')
 
         # Resumir paquetes descartados (dropped)
@@ -305,12 +328,54 @@ class DeviceMiner:
                 drop_count += packets
 
         sec["total_fw_drop_packets"] = drop_count
+
+        # Auditoría de Servicios (/ip/service/print)
+        services = self._safe_get('/ip/service')
+        sec["open_ports"] = []
+        for srv in services:
+             if srv.get("disabled") == "false":
+                 sec["open_ports"].append({
+                     "name": srv.get("name"),
+                     "port": srv.get("port"),
+                     "address": srv.get("address", "0.0.0.0/0")
+                 })
+
         return sec
+
+    def _sanitize_logs(self, message: str) -> str:
+        """
+        Elimina información sensible de los logs (contraseñas, MACs opcionalmente).
+        """
+        if not message:
+            return ""
+
+        # Eliminar posibles contraseñas (patrones comunes)
+        # key: xxxx, password: xxxx, secret: xxxx
+        message = re.sub(r'(password|secret|key)[:=]\s*\S+', r'\1: [REDACTED]', message, flags=re.IGNORECASE)
+
+        # Ofuscación parcial de MACs si fuera necesario (ej: solo mostrar últimos 3 octetos)
+        # Por ahora lo dejamos tal cual, pero aquí iría la lógica.
+
+        return message
 
     def _get_logs(self) -> List[Dict[str, Any]]:
         # Limitamos a los últimos 50 logs para contexto
         logs = self._safe_call('/log', 'print')
-        return logs[-50:] if logs else []
+        processed_logs = []
+
+        if logs:
+            # Tomamos los últimos 50
+            recent_logs = logs[-50:]
+            for log in recent_logs:
+                msg = log.get("message", "")
+                sanitized = self._sanitize_logs(msg)
+                processed_logs.append({
+                    "time": log.get("time"),
+                    "topics": log.get("topics"),
+                    "message": sanitized
+                })
+
+        return processed_logs
 
     def _apply_forensic_heuristics(self, data: Dict[str, Any]) -> List[str]:
         findings = []
@@ -346,5 +411,11 @@ class DeviceMiner:
         # 4. CPU Crítico
         if cpu > 90:
             findings.append("Uso de CPU crítico (>90%).")
+
+        # 5. Servicios Inseguros
+        sec = data.get("security", {})
+        for srv in sec.get("open_ports", []):
+            if srv.get("name") in ("telnet", "ftp", "www"): # http inseguro
+                findings.append(f"Servicio inseguro activo: {srv.get('name')} puerto {srv.get('port')}. Se recomienda deshabilitar.")
 
         return findings

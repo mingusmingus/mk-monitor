@@ -132,6 +132,8 @@ def main():
 
     # Comando upgrade
     subparsers.add_parser("upgrade", help="Aplica cambios pendientes (upgrade head)")
+    # Alias migrate -> upgrade
+    subparsers.add_parser("migrate", help="Alias para 'upgrade' (aplica cambios pendientes)")
 
     # Comando check
     subparsers.add_parser("check", help="Verifica conexión y versión actual")
@@ -162,7 +164,7 @@ def main():
         sys.exit(check_connection(backend_dir))
     elif args.command == "make":
         sys.exit(make_migration(args.message, backend_dir))
-    elif args.command == "upgrade":
+    elif args.command in ["upgrade", "migrate"]:
         sys.exit(upgrade_db(backend_dir))
 
 if __name__ == "__main__":

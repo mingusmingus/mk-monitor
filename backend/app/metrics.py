@@ -1,15 +1,11 @@
 """
-Placeholders de métricas en memoria para el backend.
+Módulo de métricas en memoria.
 
-Objetivo:
-- Contar solicitudes a proveedores de IA y los fallbacks automáticos.
+Provee funcionalidades básicas para el seguimiento de métricas operativas del backend,
+específicamente enfocadas en el rendimiento y comportamiento de los proveedores de IA.
 
-NOTA: Esto es deliberadamente simple y no persistente. Adecuado para
-desarrollo/local.
-
-TODO: Migrar a Prometheus usando `prometheus_client` con métricas como:
-- Counter: ai_requests_total{provider, outcome}
-- Counter: ai_fallbacks_total{provider}
+Nota: Implementación en memoria no persistente. Diseñada para desarrollo.
+Para producción, se recomienda migrar a `prometheus_client`.
 """
 from __future__ import annotations
 
@@ -18,20 +14,21 @@ from threading import Lock
 from typing import Dict, Tuple
 
 
-# Estructuras in-memory (no persistentes)
+# Estructuras en memoria (no persistentes)
 _ai_requests_total: Dict[Tuple[str, bool], int] = defaultdict(int)
 _ai_fallbacks_total: Dict[str, int] = defaultdict(int)
 
-# Bloqueo básico para evitar condiciones de carrera en servidores multi-hilo
+# Mecanismo de bloqueo para concurrencia
 _lock = Lock()
 
 
 def inc_ai_requests(provider: str, success: bool) -> None:
-    """Incrementa el contador de solicitudes a un proveedor de IA.
+    """
+    Incrementa el contador de solicitudes realizadas a un proveedor de IA.
 
     Args:
-        provider: Nombre del proveedor (e.g., "deepseek", "openai").
-        success: True si la solicitud fue exitosa; False si falló (timeout, HTTP error, etc.).
+        provider (str): Identificador del proveedor (ej. "deepseek").
+        success (bool): Indica si la solicitud fue exitosa (True) o fallida (False).
     """
     key = (provider.lower(), bool(success))
     with _lock:
@@ -39,18 +36,28 @@ def inc_ai_requests(provider: str, success: bool) -> None:
 
 
 def inc_ai_fallbacks(provider: str) -> None:
-    """Incrementa el contador de fallbacks automáticos para un proveedor dado.
+    """
+    Incrementa el contador de recurrencia a mecanismos de respaldo (fallback).
 
-    Se usa cuando, por ejemplo, falla DeepSeek en modo "auto" y se cae a heurísticas.
+    Se utiliza cuando un proveedor principal falla y el sistema opta por una alternativa
+    (ej. heurísticas).
+
+    Args:
+        provider (str): Identificador del proveedor que falló.
     """
     k = provider.lower()
     with _lock:
         _ai_fallbacks_total[k] += 1
 
 
-# Funciones auxiliares opcionales (para depuración o endpoints de salud)
 def _snapshot() -> dict:
-    """Devuelve un snapshot de los contadores actuales (solo para debug)."""
+    """
+    Genera una instantánea del estado actual de las métricas.
+    Útil para depuración y monitoreo básico.
+
+    Returns:
+        dict: Diccionario conteniendo el estado actual de los contadores.
+    """
     with _lock:
         return {
             "ai_requests_total": {f"{p}:{'success' if s else 'error'}": c for (p, s), c in _ai_requests_total.items()},

@@ -1,8 +1,12 @@
 import React from 'react'
 
 /**
- * Device Health Indicator
- * - Refactored to use inline styles or new CSS variables
+ * Indicador de Salud de Dispositivo.
+ *
+ * Componente visual (punto de color) que representa el estado de salud del dispositivo.
+ *
+ * Props:
+ * - healthStatus: 'verde' | 'amarillo' | 'rojo' | 'unknown'
  */
 export default function DeviceHealthIndicator({ healthStatus = 'verde' }) {
   const colors = {

@@ -16,14 +16,19 @@ from app.auth.jwt_utils import create_jwt, decode_jwt
 @pytest.fixture(scope="module")
 def app(tmp_path_factory):
     os.environ.setdefault("APP_ENV", "test")
+    # These might be ignored if Config is already imported, so we set them in app.config below too
     os.environ.setdefault("JWT_SECRET", "auth-flow-secret")
     os.environ.setdefault("REDIS_URL", "memory://")
-    os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
+    encryption_key = Fernet.generate_key().decode()
+    os.environ.setdefault("ENCRYPTION_KEY", encryption_key)
 
     db_path = tmp_path_factory.mktemp("authflow") / "authflow.sqlite"
     os.environ["DATABASE_URL"] = f"sqlite:///{db_path.as_posix()}"
 
     application = create_app()
+    # Explicitly set config to ensure it is present regardless of import order
+    application.config["JWT_SECRET_KEY"] = "auth-flow-secret"
+    application.config["ENCRYPTION_KEY"] = encryption_key
     application.config.update(TESTING=True)
 
     with application.app_context():

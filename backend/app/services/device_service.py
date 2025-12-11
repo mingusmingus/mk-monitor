@@ -1,9 +1,10 @@
 """
-Servicio de dispositivos:
+Servicio de Gestión de Dispositivos.
 
-- Alta/baja/modificación de equipos por tenant.
-- Enforce de plan comercial (máximo de equipos).
-- Cifrado/descifrado de credenciales de router con clave simétrica (ENCRYPTION_KEY).
+Provee funcionalidades para:
+- Crear y listar dispositivos por tenant.
+- Validar restricciones del plan comercial (límites de dispositivos).
+- Cifrar y descifrar credenciales de acceso (routers) utilizando criptografía simétrica (Fernet).
 """
 from typing import List, Dict, Any, Optional
 from base64 import urlsafe_b64encode
@@ -16,6 +17,9 @@ from ..config import Config, is_dev, validate_encryption_key
 from .subscription_service import can_add_device
 
 class DeviceLimitReached(Exception):
+    """
+    Excepción lanzada cuando un tenant intenta exceder su límite de dispositivos.
+    """
     def __init__(self, message: str, required_plan_hint: Optional[str] = None):
         super().__init__(message)
         self.message = message
@@ -24,44 +28,68 @@ class DeviceLimitReached(Exception):
 
 def _get_fernet() -> Optional[Fernet]:
     """
-    Obtiene Fernet a partir de ENCRYPTION_KEY.
-    - Dev: si ENCRYPTION_KEY ausente -> WARNING y passthrough (None).
-    - Dev: si ENCRYPTION_KEY no es válida Fernet -> derivar por SHA-256 (WARNING).
-    - Prod: si ausente o inválida -> excepción clara (Config ya valida en boot; doble guardia aquí).
+    Obtiene una instancia de Fernet utilizando la clave de configuración ENCRYPTION_KEY.
+
+    Comportamiento:
+    - Producción: Requiere una clave Fernet válida (base64 urlsafe 32 bytes). Lanza error si falla.
+    - Desarrollo: Permite fallback a texto plano o derivación de clave si la configuración es incorrecta,
+      emitiendo advertencias.
+
+    Returns:
+        Optional[Fernet]: Instancia de cifrador, o None en modo desarrollo sin clave.
     """
     key = getattr(Config, "ENCRYPTION_KEY", None)
-    # Ausente
+
+    # Caso: Clave ausente
     if not key:
         if is_dev():
-            logging.warning("ENCRYPTION_KEY ausente en dev; usando passthrough (NO cifrado). TODO: configura ENCRYPTION_KEY en infra/.env")
+            logging.warning("[WARNING] ENCRYPTION_KEY ausente en dev; usando passthrough (NO cifrado). Configura ENCRYPTION_KEY en infra/.env para probar cifrado.")
             return None
-        raise RuntimeError("ENCRYPTION_KEY requerida en producción")
+        raise RuntimeError("[ERROR] ENCRYPTION_KEY requerida en producción")
 
-    # Válida (Fernet base64 urlsafe 32 bytes)
+    # Caso: Clave válida (Fernet base64 urlsafe 32 bytes)
     if validate_encryption_key(key):
         try:
             return Fernet(key.encode("utf-8"))
         except Exception:
-            # Si fallara por algún motivo inesperado, tratamos como inválida abajo
             pass
 
-    # No válida
+    # Caso: Clave no válida (Fallback Dev)
     if is_dev():
-        logging.warning("ENCRYPTION_KEY no es una clave Fernet válida; derivando clave (DEV) con SHA-256")
+        logging.warning("[WARNING] ENCRYPTION_KEY no es una clave Fernet válida; derivando clave (DEV) con SHA-256")
         derived = urlsafe_b64encode(sha256(key.encode("utf-8")).digest())
         return Fernet(derived)
-    raise RuntimeError("ENCRYPTION_KEY inválida; debe ser Fernet base64 urlsafe de 32 bytes en producción")
+
+    raise RuntimeError("[ERROR] ENCRYPTION_KEY inválida; debe ser Fernet base64 urlsafe de 32 bytes en producción")
 
 def encrypt_secret(plaintext: str) -> str:
+    """
+    Cifra un texto plano.
+
+    Args:
+        plaintext (str): Texto a cifrar.
+
+    Returns:
+        str: Texto cifrado en base64, o texto plano si no hay cifrador (solo dev).
+    """
     if plaintext is None:
         return None
     f = _get_fernet()
     if not f:
-        # Passthrough en dev (NO cifrado). Evita logs de secretos.
+        # Passthrough en dev
         return plaintext
     return f.encrypt(plaintext.encode("utf-8")).decode("utf-8")
 
 def decrypt_secret(ciphertext: str) -> str:
+    """
+    Descifra un texto cifrado.
+
+    Args:
+        ciphertext (str): Texto cifrado.
+
+    Returns:
+        str: Texto plano descifrado.
+    """
     if not ciphertext:
         return None
     f = _get_fernet()
@@ -71,12 +99,26 @@ def decrypt_secret(ciphertext: str) -> str:
     return f.decrypt(ciphertext.encode("utf-8")).decode("utf-8")
 
 def list_devices_for_tenant(tenant_id: int) -> List[Device]:
+    """
+    Lista todos los dispositivos asociados a un tenant.
+    """
     return Device.query.filter_by(tenant_id=tenant_id).all()
 
 def create_device(tenant_id: int, payload: Dict[str, Any]) -> Device:
     """
-    Crea un device validando límite de plan y cifrando credenciales.
-    Puede lanzar DeviceLimitReached con info de upsell.
+    Registra un nuevo dispositivo para un tenant.
+
+    Valida el límite del plan y cifra las credenciales proporcionadas.
+
+    Args:
+        tenant_id (int): ID del tenant.
+        payload (Dict[str, Any]): Datos del dispositivo (nombre, ip, usuario, password, etc.).
+
+    Returns:
+        Device: Instancia del dispositivo creado.
+
+    Raises:
+        DeviceLimitReached: Si el tenant ha alcanzado su límite de dispositivos.
     """
     can_add, reason = can_add_device(tenant_id)
     if not can_add:
@@ -88,7 +130,7 @@ def create_device(tenant_id: int, payload: Dict[str, Any]) -> Device:
     username_enc = payload.get("username_encrypted")
     password_enc = payload.get("password_encrypted")
 
-    # Permitir entrada en claro y cifrar aquí si vienen como username/password
+    # Cifrar credenciales si vienen en texto plano
     if not username_enc and payload.get("username"):
         username_enc = encrypt_secret(payload["username"])
     if not password_enc and payload.get("password"):

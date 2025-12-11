@@ -7,7 +7,10 @@ import Input from '../components/ui/Input.jsx'
 import Card from '../components/ui/Card.jsx'
 
 /**
- * Alerts Page Redesign
+ * Alerts Page (Rediseñada)
+ *
+ * Página dedicada a la gestión de alertas e incidentes.
+ * Permite filtrar por severidad, dispositivo y estado operativo.
  */
 export default function AlertsPage() {
   const { tenantStatus } = useAuth()
@@ -32,7 +35,7 @@ export default function AlertsPage() {
         <Button onClick={refetch} variant="ghost" size="sm">Actualizar</Button>
       </header>
 
-      {/* Filters */}
+      {/* Filtros */}
       <Card elevated>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'end' }}>
             <div style={{ flex: 1, minWidth: '180px' }}>
@@ -78,7 +81,7 @@ export default function AlertsPage() {
         </div>
       </Card>
 
-      {/* Alerts List */}
+      {/* Lista de Alertas */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {loading && <div className="text-muted" style={{ textAlign: 'center', padding: '20px' }}>Cargando alertas...</div>}
         {error && <div style={{ color: 'var(--color-accent-danger)', textAlign: 'center' }}>Error al cargar alertas</div>}

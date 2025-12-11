@@ -1,137 +1,89 @@
-# mk-monitor
+# MK-Monitor Enterprise Grade
 
-Plataforma SaaS multi-tenant para monitoreo y análisis inteligente de routers MikroTik con IA.
+**Plataforma de Operaciones de Red (NetOps) Multi-Tenant Potenciada por IA**
 
-- Aislamiento por tenant_id en todas las consultas.
-- Backend Flask + SQLAlchemy con JWT y cifrado en reposo.
-- Frontend React (Vite) con dashboard, alertas y flujo NOC.
+![Status](https://img.shields.io/badge/Status-Stable-success)
+![License](https://img.shields.io/badge/License-Proprietary-blue)
+![Python](https://img.shields.io/badge/Backend-Python%203.11-yellow)
+![React](https://img.shields.io/badge/Frontend-React%2018-blue)
 
-## Arquitectura (diagrama textual)
+MK-Monitor es una solución SaaS diseñada para proveedores de servicios de internet (ISP) y administradores de red que requieren visibilidad profunda, detección proactiva de amenazas y análisis forense automatizado de dispositivos Mikrotik.
 
-Frontend (React/Vite)
-  └── solicitudes HTTP a /api/*
-      └── Backend Flask (Blueprints: auth, devices, alerts, logs, noc, subscriptions, health, sla)
-          └── PostgreSQL (SQLAlchemy)
+---
 
-Resumen:
-- Frontend consume la API vía Axios [frontend/src/api/client.js](mk-monitor/frontend/src/api/client.js).
-- Backend expone Blueprints bajo /api: ver [backend/app/__init__.py](mk-monitor/backend/app/__init__.py).
-- Persistencia en Postgres: modelos en [backend/app/models](mk-monitor/backend/app/models).
+## 🚀 Características Principales
 
-## Flujo principal de valor
+*   **Inteligencia Artificial Forense:** Integración con modelos LLM (DeepSeek) para el análisis contextual de incidentes y generación de recomendaciones operativas.
+*   **Arquitectura Multi-Tenant:** Aislamiento estricto de datos y recursos por cliente.
+*   **Minería de Datos Profunda:** Extracción avanzada de telemetría (L1/L2/L3) utilizando `routeros_api`.
+*   **Gestión de Ciclo de Vida de Alertas:** Flujo de trabajo completo para detección, triaje y resolución de incidentes (SLA).
+*   **Seguridad Enterprise:** Cifrado de credenciales en reposo (Fernet), protección contra fuerza bruta y autenticación JWT.
 
-1) Cliente inicia sesión.
-   - Endpoint: [`auth_routes.login`](mk-monitor/backend/app/routes/auth_routes.py) emite JWT con expiración usando [`jwt_utils.create_jwt`](mk-monitor/backend/app/auth/jwt_utils.py).
+## 🛠 Stack Tecnológico
 
-2) Ve estado de sus equipos y alertas.
-   - Equipos: [`device_routes.list_devices`](mk-monitor/backend/app/routes/device_routes.py) calcula salud usando [`alert_service.compute_device_health`](mk-monitor/backend/app/services/alert_service.py).
-   - Alertas: [`alert_routes.list_alerts`](mk-monitor/backend/app/routes/alert_routes.py).
+### Backend
+*   **Framework:** Python / Flask (Blueprints modularizados).
+*   **Base de Datos:** PostgreSQL + SQLAlchemy (ORM) + Alembic (Migraciones).
+*   **Seguridad:** Cryptography (Fernet) + JWT.
+*   **IA:** Estrategia agnóstica de proveedor (DeepSeek implementado).
 
-3) NOC gestiona incidentes y resuelve tickets.
-   - Cambios de estado: [`noc_routes.update_alert_status`](mk-monitor/backend/app/routes/noc_routes.py) persiste histórico [`AlertStatusHistory`](mk-monitor/backend/app/models/alert_status_history.py) vía [`alert_service.update_alert_status`](mk-monitor/backend/app/services/alert_service.py).
+### Frontend
+*   **Core:** React 18 + Vite.
+*   **Estilos:** CSS Modules con Variables CSS (Diseño Minimalista "Apple-like").
+*   **Estado:** Context API + Custom Hooks.
 
-4) El sistema mide SLA.
-   - Cálculo de métricas: [`sla_service.get_sla_metrics`](mk-monitor/backend/app/services/sla_service.py).
+### Infraestructura
+*   **Contenedores:** Docker & Docker Compose.
+*   **Proxy Inverso:** Nginx.
 
-## Análisis con IA
+## 📦 Instalación y Despliegue
 
-El backend genera alertas a partir de logs con un servicio de IA (placeholder) en [`ai_analysis_service.analyze_logs`](mk-monitor/backend/app/services/ai_analysis_service.py). El pipeline de monitoreo está en [`monitoring_service.analyze_and_generate_alerts`](mk-monitor/backend/app/services/monitoring_service.py).
+### Requisitos Previos
+*   Docker Desktop (v4.0+)
+*   Git
 
-## Enforcement del plan (límite de equipos + upsell)
+### Paso a Paso
 
-- El plan efectivo y límites se resuelven en [`subscription_service.get_current_subscription`](mk-monitor/backend/app/services/subscription_service.py).
-- Validación al crear equipos: [`device_service.create_device`](mk-monitor/backend/app/services/device_service.py) llama a [`subscription_service.can_add_device`](mk-monitor/backend/app/services/subscription_service.py) y puede lanzar `DeviceLimitReached` (upsell). Expuesto por [`device_routes.create_device`](mk-monitor/backend/app/routes/device_routes.py) con HTTP 402.
+1.  **Clonar el repositorio:**
+    ```bash
+    git clone https://github.com/tu-organizacion/mk-monitor.git
+    cd mk-monitor
+    ```
 
-## Aislamiento por tenant
-
-- Todos los endpoints protegen con [`auth.decorators.require_auth`](mk-monitor/backend/app/auth/decorators.py), adjuntando `g.tenant_id`.
-- Las consultas filtran por `tenant_id` (ej.: [`alert_routes.list_alerts`](mk-monitor/backend/app/routes/alert_routes.py), [`device_routes.list_devices`](mk-monitor/backend/app/routes/device_routes.py), [`log_routes.device_logs`](mk-monitor/backend/app/routes/log_routes.py)).
-- Modelos multi-tenant en [backend/app/models](mk-monitor/backend/app/models).
-
-## Migraciones de Base de Datos
-
-Sistema gestionado con **Alembic** para cambios versionados del esquema.
-
-**Guía rápida** (Windows PowerShell):
-```powershell
-# Ver estado actual
-.\migration-status.ps1
-
-# Crear migración tras modificar modelos
-.\new-migration.ps1 "descripción del cambio"
-
-# Aplicar migraciones pendientes
-.\migrate.ps1
-```
-
-📖 **Documentación completa**: Ver [MIGRATIONS.md](MIGRATIONS.md)  
-📂 **Archivos de migración**: `backend/migrations/versions/`  
-⚙️ **Configuración**: `backend/alembic.ini`
-
-## Arranque rápido hoy
-
-Ponlo a correr en minutos con Docker Compose.
-
-### Requisitos
-
-- Docker Desktop (o Docker Engine) instalado y corriendo
-- Docker Compose v2 (comando `docker compose`)
-- Opcional: variable `DEEPSEEK_API_KEY` para análisis con IA (si no la defines, el sistema cae en heurísticas locales)
-
-### Arranque rápido (UI renovada)
-
-1.  **Configura el entorno**:
-    Copia el archivo de ejemplo y ajusta si es necesario (por defecto funciona en local).
+2.  **Configurar Variables de Entorno:**
+    Copie el archivo de ejemplo y ajuste los secretos (especialmente `DEEPSEEK_API_KEY` para habilitar IA).
     ```bash
     cp infra/.env.example infra/.env
     ```
-    *Opcional*: Si quieres probar el registro público, asegúrate de que tu frontend permita el registro (por defecto habilitado en dev).
 
-2.  **Levanta la infraestructura**:
-    Desde la raíz del proyecto:
+3.  **Iniciar Servicios:**
     ```bash
     docker compose -f infra/docker-compose.yml up -d --build
     ```
 
-3.  **Accede a la plataforma**:
-    - **Frontend**: Abre [http://localhost:8080](http://localhost:8080) (o el puerto configurado en docker-compose).
-    - **Backend API**: [http://localhost:5000/api/health](http://localhost:5000/api/health).
+4.  **Acceso:**
+    *   **Frontend:** [http://localhost:8080](http://localhost:8080)
+    *   **Backend Health:** [http://localhost:5000/api/health](http://localhost:5000/api/health)
 
-4.  **Flujo de prueba**:
-    1.  Ve a `/signup` (o usa el link "Regístrate" en el login) y crea un usuario para tu tenant.
-    2.  Inicia sesión con tus nuevas credenciales.
-    3.  Verás el **Dashboard** vacío.
-    4.  Ve a **Equipos** y usa el botón **"+ Agregar"** (ahora con validación visual) para añadir un router (IP dummy si no tienes uno real).
-    5.  El sistema empezará a generar logs simulados (si está en modo demo) o reales, y verás las alertas en el Dashboard.
+## 🤝 Guía de Contribución
 
-### Pasos (Legacy / Manual)
+1.  **Estándares de Código:**
+    *   **Python:** PEP8, Docstrings en Español (Google Style), Type Hints.
+    *   **JavaScript:** ES6+, JSDoc en Español, Componentes Funcionales.
+    *   **Commits:** Usar Conventional Commits (ej. `feat: agregar panel NOC`).
 
- a. Copia variables de ejemplo y ajústalas
+2.  **Flujo de Trabajo:**
+    *   Crear rama `feature/nombre-funcionalidad` desde `main`.
+    *   Realizar cambios y verificar localmente.
+    *   Solicitar Pull Request (PR) para revisión.
 
-    ```powershell
-    cp infra/.env.example infra/.env
-    # Edita infra/.env y ajusta claves/secretos mínimos (JWT_SECRET, ENCRYPTION_KEY, credenciales Postgres, etc.)
-    ```
+3.  **Sanitización:**
+    *   **Cero Emojis:** El código y logs deben ser profesionales y libres de emojis.
+    *   **Logs Estructurados:** Usar `[INFO]`, `[WARNING]`, `[ERROR]`.
 
- b. Levanta toda la pila con build fresco
+## 📄 Licencia
 
-    ```powershell
-    docker compose -f infra/docker-compose.yml up -d --build
-    ```
+Este software es propietario y confidencial. Prohibida su distribución sin autorización expresa.
 
- c. Verifica el backend (salud)
-
-    - http://localhost:5000/api/health debería responder `{ "status": "ok" }`.
-
- d. Verifica el frontend
-
-    - Si usas los contenedores (Nginx): http://localhost:8080
-    - Si corres el frontend en modo dev (Vite): http://localhost:5173
-
- e. Añade un dispositivo real y observa los logs/alertas
-
-    - Crea el dispositivo desde la UI y espera a que el servicio de monitoreo ingiera logs; verás alertas y estado de salud.
-
-### Nota sobre IA (fallback)
-
-- Si no configuras `DEEPSEEK_API_KEY`, el proveedor `auto` usa heurísticas locales como fallback para generar alertas básicas a partir de los logs (sin llamadas a LLM). Cuando añadas la clave, el análisis se enriquecerá automáticamente.
+---
+*Mantenido por el Equipo de Ingeniería de MK-Monitor.*

@@ -1,6 +1,16 @@
 import React from 'react'
+import PropTypes from 'prop-types'
 
-// Mapea estado a clase de color.
+/**
+ * StatusBadge
+ *
+ * Componente visual tipo "etiqueta" para mostrar el estado de severidad de una alerta.
+ * Utiliza clases CSS predefinidas para codificación por color.
+ *
+ * Props:
+ * - estado: string ('Alerta Crítica', 'Alerta Severa', 'Alerta Menor', 'Aviso')
+ */
+
 const mapClass = (estado) => {
   switch (estado) {
     case 'Alerta Crítica':
@@ -14,7 +24,10 @@ const mapClass = (estado) => {
   }
 }
 
-// Badge de estado de alerta.
 export default function StatusBadge({ estado = 'Aviso' }) {
   return <span className={mapClass(estado)}>{estado}</span>
+}
+
+StatusBadge.propTypes = {
+  estado: PropTypes.string
 }

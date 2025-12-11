@@ -1,8 +1,10 @@
 """
-Servicio de suscripciones:
+Servicio de Gestión de Suscripciones.
 
-- Aplica límites por plan (BASICMAAT: 5, INTERMAAT: 15, PROMAAT: ilimitado).
-- Estado de pago del tenant.
+Provee funcionalidades para:
+- Determinar el plan comercial vigente y sus límites.
+- Validar si un tenant puede agregar nuevos recursos (dispositivos).
+- Gestionar la creación de suscripciones iniciales.
 """
 from typing import Tuple, Optional, Dict, Any
 from datetime import datetime, timedelta
@@ -12,29 +14,29 @@ from ..models.tenant import Tenant
 from sqlalchemy import func
 from ..db import db
 
+# Límites de dispositivos por Plan
 PLAN_LIMITS: dict[str, Optional[int]] = {
     "BASICMAAT": 5,
     "INTERMAAT": 15,
-    "PROMAAT": None,  # Ilimitado
+    "PROMAAT": None,  # None representa ilimitado
 }
 
 def _resolve_current_plan(tenant: Tenant) -> str:
-    # Plan efectivo: si hubiera múltiples, tomaría el activo más reciente; por ahora usamos Tenant.plan
+    """Resuelve el nombre del plan activo para un tenant."""
     return (tenant.plan or "BASICMAAT").upper()
 
 def get_current_subscription(tenant_id: int) -> Dict[str, Any]:
     """
-    Retorna información ejecutiva de la suscripción actual del tenant.
-    {
-      "plan_name": ...,
-      "max_devices": ... (None => ilimitado),
-      "status_pago": "activo" | "suspendido",
-      "devices_registrados": <count>,
-    }
+    Obtiene el estado actual de la suscripción del tenant.
+
+    Args:
+        tenant_id (int): ID del tenant.
+
+    Returns:
+        Dict[str, Any]: Información consolidada del plan, límites, uso y estado de pago.
     """
     tenant = Tenant.query.filter_by(id=tenant_id).first()
     if not tenant:
-        # En escenarios reales, lanzaríamos error; aquí devolvemos defaults seguros.
         return {
             "plan_name": "BASICMAAT",
             "max_devices": PLAN_LIMITS["BASICMAAT"],
@@ -42,7 +44,7 @@ def get_current_subscription(tenant_id: int) -> Dict[str, Any]:
             "devices_registrados": 0,
         }
 
-    # Opcional: considerar la suscripción más reciente por activo_hasta
+    # Buscar suscripción activa (la más reciente que no haya expirado o sea indefinida)
     _now = datetime.utcnow()
     sub = (Subscription.query
            .filter(Subscription.tenant_id == tenant_id)
@@ -51,8 +53,14 @@ def get_current_subscription(tenant_id: int) -> Dict[str, Any]:
            .first())
 
     plan_name = _resolve_current_plan(tenant if tenant else None)
-    # Si el registro de suscripción setea un max_devices custom, respetarlo; si no, usar regla por plan
-    max_devices = sub.max_devices if sub and sub.max_devices is not None else PLAN_LIMITS.get(plan_name, 5)
+
+    # Determinar max_devices: Priorizar suscripción explícita, sino fallback al default del plan
+    # Nota: En DB, 0 puede usarse para representar ilimitado si el campo es integer no nulo,
+    # pero aquí la lógica maneja None como ilimitado.
+    if sub and sub.max_devices is not None:
+         max_devices = sub.max_devices
+    else:
+         max_devices = PLAN_LIMITS.get(plan_name, 5)
 
     used = Device.query.filter_by(tenant_id=tenant_id).count()
     return {
@@ -64,11 +72,19 @@ def get_current_subscription(tenant_id: int) -> Dict[str, Any]:
 
 def can_add_device(tenant_id: int) -> Tuple[bool, Optional[Dict[str, Any]]]:
     """
-    Devuelve (puede_agregar: bool, razon: dict|None).
-    Si False, razón contiene payload para upsell (message, required_plan_hint).
+    Valida si un tenant tiene capacidad para agregar un nuevo dispositivo.
+
+    Args:
+        tenant_id (int): ID del tenant.
+
+    Returns:
+        Tuple[bool, Optional[Dict[str, Any]]]:
+            - bool: True si puede agregar, False si no.
+            - dict: Información para upsell si la validación falla (mensaje y sugerencia).
     """
     info = get_current_subscription(tenant_id)
-    # Bloqueo comercial por suspensión
+
+    # Validación de estado de cuenta
     if info["status_pago"] == "suspendido":
         return False, {
             "upsell": True,
@@ -80,11 +96,11 @@ def can_add_device(tenant_id: int) -> Tuple[bool, Optional[Dict[str, Any]]]:
     used = info["devices_registrados"]
 
     if max_devices is None:
-        return True, None  # Ilimitado (PROMAAT)
+        return True, None  # Plan Ilimitado
 
     if used >= max_devices:
         plan = info["plan_name"]
-        # Sugerencia de upgrade
+        # Lógica de Upsell
         if plan == "BASICMAAT":
             return False, {
                 "upsell": True,
@@ -108,20 +124,36 @@ def can_add_device(tenant_id: int) -> Tuple[bool, Optional[Dict[str, Any]]]:
 
 def create_initial_subscription(tenant_id: int, plan: str = "BASICMAAT") -> Subscription:
     """
-    Crea una suscripción inicial para el tenant con límites por plan.
-    - No maneja cobros; deja activo_hasta por defecto a 30 días desde ahora.
-    - Si el plan es inválido, cae en BASICMAAT.
+    Genera la suscripción inicial para un nuevo tenant.
+
+    Args:
+        tenant_id (int): ID del tenant.
+        plan (str): Nombre del plan (default 'BASICMAAT').
+
+    Returns:
+        Subscription: Objeto de suscripción creado (pendiente de commit).
     """
     p = (plan or "BASICMAAT").upper()
-    max_devices = PLAN_LIMITS.get(p, PLAN_LIMITS["BASICMAAT"])
-    # Periodo inicial simbólico de 30 días
+    max_devices_limit = PLAN_LIMITS.get(p, PLAN_LIMITS["BASICMAAT"])
+
+    # Periodo de prueba/inicial de 30 días
     activo_hasta = datetime.utcnow() + timedelta(days=30)
+
+    # Manejo de ilimitado (None) para columna Integer: usamos 0 o un número muy alto.
+    # Asumimos que la lógica de negocio interpreta 0 como ilimitado o manejamos un valor alto.
+    # Para consistencia con el modelo, si es None lo dejamos como 0 si la columna no acepta Nulls,
+    # o Null si lo permite. Revisando modelo: max_devices int not null default 5.
+    # Ajuste: usaremos un valor centinela o el límite real.
+    # Si PROMAAT es ilimitado, ponemos un número alto (ej. 10000) o modificamos la lógica de lectura.
+    # Por ahora, si es None (PROMAAT), ponemos 999999.
+
+    val_max_devices = max_devices_limit if max_devices_limit is not None else 999999
+
     sub = Subscription(
         tenant_id=tenant_id,
         plan_name=p,
-        max_devices=max_devices if max_devices is not None else 0,  # None no cabe en Integer; usar 0 como 'ilimitado'
+        max_devices=val_max_devices,
         activo_hasta=activo_hasta,
     )
     db.session.add(sub)
-    # commit se realiza en el llamador (transacción envolvente)
     return sub

@@ -1,7 +1,7 @@
 """
-Rutas de alertas:
+Rutas para gestión de Alertas.
 
-- Listado, actualización de estado operativo y consulta por dispositivo.
+Provee endpoints para listar y gestionar el ciclo de vida de las alertas operativas.
 """
 from flask import Blueprint, request, jsonify, g
 from ..auth.decorators import require_auth
@@ -13,12 +13,12 @@ alert_bp = Blueprint("alerts", __name__)
 @require_auth()
 def list_alerts():
     """
-    Listado de alertas con filtros opcionales:
-      - estado
-      - device_id
-      - fecha_inicio / fecha_fin (TODO)
-      - status_operativo
-    Solo alertas del tenant (g.tenant_id).
+    Lista las alertas asociadas al tenant del usuario autenticado.
+
+    Permite filtrar por parámetros recibidos en la query string (ej. estado, device_id).
+
+    Returns:
+        Response: Objeto JSON con la lista de alertas.
     """
     alerts = alert_service.list_alerts(g.tenant_id, request.args)
     result = [{

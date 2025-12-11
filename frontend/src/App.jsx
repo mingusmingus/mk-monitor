@@ -12,7 +12,10 @@ import Header from './components/Layout/Header.jsx'
 import useAuth from './hooks/useAuth'
 import SignupPage from './pages/SignupPage.jsx'
 
-// Envoltura de layout para páginas protegidas
+/**
+ * Layout protegido que envuelve las páginas autenticadas.
+ * Incluye el Sidebar y el Header.
+ */
 function ProtectedLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   return (
@@ -28,7 +31,13 @@ function ProtectedLayout() {
   )
 }
 
-// Requiere un token para permitir acceso.
+/**
+ * Componente de orden superior (HOC) que fuerza la autenticación.
+ * Redirige a /login si no existe un token válido.
+ *
+ * @param {Object} props - Propiedades del componente.
+ * @param {React.ReactNode} props.children - Componentes hijos a renderizar si está autenticado.
+ */
 function RequireAuth({ children }) {
   const { token } = useAuth()
   const location = useLocation()
@@ -36,7 +45,12 @@ function RequireAuth({ children }) {
   return children
 }
 
-// Modal de sesión expirada
+/**
+ * Modal simple para notificar al usuario que su sesión ha expirado.
+ *
+ * @param {Object} props
+ * @param {Function} props.onConfirm - Callback al confirmar la acción.
+ */
 function SessionExpiredModal({ onConfirm }) {
   return (
     <div className="modal-overlay">
@@ -51,11 +65,15 @@ function SessionExpiredModal({ onConfirm }) {
   )
 }
 
+/**
+ * Componente principal de la aplicación.
+ * Define el enrutamiento y la gestión de estado de autenticación global.
+ */
 export default function App() {
   const navigate = useNavigate()
   const { logout, expiredSession } = useAuth()
 
-  // Listener legacy (otros motivos de logout forzado)
+  // Manejador para eventos de logout forzado emitidos desde otras partes de la app
   useEffect(() => {
     function handleLogout(e) {
       const reason = e.detail?.reason

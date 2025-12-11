@@ -1,9 +1,11 @@
 """
-Servicio de alertas:
+Servicio de Gestión de Alertas.
 
-- Gestiona ciclo de vida de Alert (crear, actualizar estado, cerrar).
-- Calcula salud del equipo (semáforo) según alertas activas.
-- Mantiene histórico AlertStatusHistory para SLA.
+Este servicio encapsula la lógica de negocio relacionada con las alertas:
+- Creación y consulta con filtros.
+- Gestión del ciclo de vida (cambios de estado operativo).
+- Cálculo de indicadores de salud de dispositivos basados en alertas activas.
+- Registro histórico para cumplimiento de SLA.
 """
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -13,7 +15,14 @@ from ..db import db
 
 def list_alerts(tenant_id: int, filtros: Dict[str, Any]) -> List[Alert]:
     """
-    Filtros soportados: estado, device_id, fecha_inicio, fecha_fin, status_operativo
+    Lista alertas aplicando filtros de negocio.
+
+    Args:
+        tenant_id (int): ID del tenant.
+        filtros (Dict[str, Any]): Diccionario de filtros (estado, device_id, status_operativo).
+
+    Returns:
+        List[Alert]: Lista de objetos Alert que coinciden con los criterios.
     """
     q = Alert.query.filter_by(tenant_id=tenant_id)
 
@@ -21,34 +30,46 @@ def list_alerts(tenant_id: int, filtros: Dict[str, Any]) -> List[Alert]:
     if estado:
         q = q.filter(Alert.estado == estado)
 
-    device_id = filtros.get("device_id", type=int) if hasattr(filtros, "get") else filtros.get("device_id")
-    if device_id:
-        q = q.filter(Alert.device_id == int(device_id))
+    device_id = filtros.get("device_id")
+    # Manejo robusto si filtros viene de request.args o dict plano
+    if device_id and hasattr(device_id, "isdigit") and str(device_id).isdigit():
+         q = q.filter(Alert.device_id == int(device_id))
+    elif isinstance(device_id, int):
+         q = q.filter(Alert.device_id == device_id)
 
     status_operativo = filtros.get("status_operativo")
     if status_operativo:
         q = q.filter(Alert.status_operativo == status_operativo)
 
-    # TODO: filtros por fecha_inicio/fecha_fin en created_at/updated_at (zona horaria)
-    # fecha_inicio = filtros.get("fecha_inicio")
-    # fecha_fin = filtros.get("fecha_fin")
-
     return q.order_by(Alert.created_at.desc()).all()
 
 def update_alert_status(alert_id: int, user_id: int, tenant_id: int, nuevo_status: str, comentario: Optional[str]) -> Alert:
     """
-    Verifica pertenencia por tenant, actualiza estado/comentario y guarda histórico.
+    Actualiza el estado operativo de una alerta y registra el cambio en el histórico.
+
+    Args:
+        alert_id (int): ID de la alerta.
+        user_id (int): ID del usuario que realiza el cambio.
+        tenant_id (int): ID del tenant para validación de propiedad.
+        nuevo_status (str): Nuevo estado ('Pendiente', 'En curso', 'Resuelta').
+        comentario (Optional[str]): Comentario opcional sobre la acción.
+
+    Returns:
+        Alert: La instancia de la alerta actualizada.
+
+    Raises:
+        ValueError: Si la alerta no existe o no pertenece al tenant.
     """
     alert = Alert.query.filter_by(id=alert_id, tenant_id=tenant_id).first()
     if not alert:
-        raise ValueError("Alerta no encontrada")
+        raise ValueError("[ERROR] Alerta no encontrada")
 
     prev = alert.status_operativo
     alert.status_operativo = nuevo_status
     alert.comentario_ultimo = comentario
     alert.updated_at = datetime.utcnow()
 
-    # Auditoría: quién y cuándo (UTC). Importante si pasa a "Resuelta" para SLA.
+    # Registro de auditoría
     hist = AlertStatusHistory(
         alert_id=alert.id,
         previous_status_operativo=prev,
@@ -62,10 +83,19 @@ def update_alert_status(alert_id: int, user_id: int, tenant_id: int, nuevo_statu
 
 def compute_device_health(tenant_id: int, device_id: int) -> str:
     """
+    Calcula el estado de salud de un dispositivo basado en sus alertas activas.
+
     Reglas:
-      - rojo si hay alerta activa (status_operativo != "Resuelta") con estado in ["Alerta Severa","Alerta Crítica"]
-      - amarillo si hay alerta activa con estado == "Alerta Menor"
-      - verde en cualquier otro caso
+      - 'rojo': Si existen alertas activas de severidad 'Alerta Severa' o 'Alerta Crítica'.
+      - 'amarillo': Si existen alertas activas de severidad 'Alerta Menor'.
+      - 'verde': Si no existen alertas activas relevantes.
+
+    Args:
+        tenant_id (int): ID del tenant.
+        device_id (int): ID del dispositivo.
+
+    Returns:
+        str: Estado de salud ('rojo', 'amarillo', 'verde').
     """
     activos = (Alert.query
                .filter_by(tenant_id=tenant_id, device_id=device_id)

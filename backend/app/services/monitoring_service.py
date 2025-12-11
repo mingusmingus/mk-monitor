@@ -1,9 +1,13 @@
 """
-Servicio de monitoreo:
+Servicio de Monitoreo Forense.
 
-- Conecta a routers MikroTik (RouterOS API) para minería de datos forense.
-- Persiste LogEntry y dispara análisis por IA (DeepSeek).
-- Respeta límites de plan.
+Este servicio orquesta el ciclo completo de inteligencia de amenazas:
+1. Conecta con routers Mikrotik para extraer datos forenses profundos (Device Mining).
+2. Normaliza y persiste los logs en la base de datos.
+3. Invoca el análisis de Inteligencia Artificial (DeepSeek) sobre el contexto extraído.
+4. Genera alertas operativas ("Reportes Forenses") basadas en los hallazgos.
+
+Maneja la deduplicación de logs y alertas para evitar ruido.
 """
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
@@ -20,7 +24,15 @@ from .ai_analysis_service import analyze_device_context
 from .device_mining import DeviceMiner
 
 def _safe_decode(value: Any) -> Any:
-    """Decodifica bytes a texto UTF-8 sin lanzar excepción."""
+    """
+    Decodifica bytes a texto UTF-8 de forma segura.
+
+    Args:
+        value (Any): Valor a decodificar.
+
+    Returns:
+        str: Cadena decodificada.
+    """
     if isinstance(value, bytes):
         try:
             return value.decode("utf-8")
@@ -29,7 +41,18 @@ def _safe_decode(value: Any) -> Any:
     return value
 
 def _entry_timestamp_to_iso(entry: Dict[str, Any]) -> str:
-    """Convierte marcas temporales de RouterOS a ISO8601 (UTC naive)."""
+    """
+    Normaliza marcas temporales de RouterOS a formato ISO8601.
+
+    RouterOS puede entregar timestamps en múltiples formatos inconsistentes.
+    Esta función aplica heurísticas para unificar el formato.
+
+    Args:
+        entry (Dict[str, Any]): Entrada de log cruda desde la API.
+
+    Returns:
+        str: Timestamp en formato ISO8601.
+    """
     now = datetime.utcnow()
     timestamp_candidates = [
         str(entry.get(field)).strip()
@@ -76,7 +99,15 @@ def _entry_timestamp_to_iso(entry: Dict[str, Any]) -> str:
     return now.isoformat()
 
 def _safe_parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
-    """Convierte cadenas ISO8601 en datetime o retorna None si falla."""
+    """
+    Convierte cadenas ISO8601 a objetos datetime de forma robusta.
+
+    Args:
+        value (Optional[str]): Cadena de fecha/hora.
+
+    Returns:
+        Optional[datetime]: Objeto datetime o None si falla.
+    """
     if not value:
         return None
     candidate = value.strip()
@@ -95,12 +126,16 @@ def _safe_parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
 
 def analyze_and_generate_alerts(device: Device) -> None:
     """
-    Pipeline completo de monitoreo Forense:
+    Ejecuta el pipeline completo de monitoreo Forense para un dispositivo.
     
-    1) Minería de datos profunda (DeviceMiner).
-    2) Persistencia de Logs en LogEntry.
-    3) Análisis Forense IA (DeepSeek via AIProvider).
-    4) Generación de Alerta unificada (Reporte Forense).
+    Fases:
+    1) Minería de Datos (DeviceMiner): Extracción profunda de estado y logs.
+    2) Persistencia: Almacenamiento de nuevos logs con deduplicación.
+    3) Análisis IA: Procesamiento del contexto extraído mediante DeepSeek.
+    4) Generación de Alertas: Creación de incidentes operativos basados en hallazgos.
+
+    Args:
+        device (Device): Dispositivo objetivo.
     """
     try:
         # Paso 1: Minería de Datos
@@ -108,7 +143,7 @@ def analyze_and_generate_alerts(device: Device) -> None:
         data = miner.mine()
         
         if "error" in data:
-            logging.error(f"monitoring: Error minando datos device_id={device.id}: {data['error']}")
+            logging.error(f"[ERROR] monitoring: Error minando datos device_id={device.id}: {data['error']}")
             return
 
         now = datetime.utcnow()
@@ -125,37 +160,23 @@ def analyze_and_generate_alerts(device: Device) -> None:
 
         entries: List[LogEntry] = []
 
-        # The miner returns raw logs from API. We need to normalize them for DB.
-        # miner._get_logs returns dicts from routeros_api.
+        # Normalización de logs
         for log_item in logs_raw:
-            # We assume log_item is a dict from routeros_api
             msg = log_item.get("message", "")
             topics = log_item.get("topics", "")
             
-            # Parse timestamp using the robust helper
             ts_iso = _entry_timestamp_to_iso(log_item)
             ts_dt = _safe_parse_iso_datetime(ts_iso) or now
             
-            # Deduplication: Skip if older or equal to last known log timestamp
-            if last_ts and ts_dt <= last_ts:
-                # To be safer against exact timestamp collisions of different logs,
-                # we could also check content hash, but timestamp > last_ts is a standard simple approach.
-                # However, within the same second, we might lose logs.
-                # Ideally, we should check existence of (device_id, timestamp_equipo, raw_log).
-                # For performance, we'll stick to strict > if last_ts is recent.
-                # Or we can do a quick existence check in memory if bulk is small.
-                pass
-
-            # Since strict > might miss logs in same second, let's allow >= but check message.
-            # Efficient dedupe for small batches:
+            # Deduplicación básica por timestamp
             if last_ts and ts_dt < last_ts:
                  continue
 
-            # If equal, check if exists in DB (expensive? typically 50 logs max)
+            # Verificación de existencia para evitar duplicados en el mismo segundo
             if last_ts and ts_dt == last_ts:
                  exists = (LogEntry.query
                            .filter_by(device_id=device.id, timestamp_equipo=ts_dt)
-                           .filter(LogEntry.raw_log.like(f"%{msg}%")) # partial match
+                           .filter(LogEntry.raw_log.like(f"%{msg}%")) # coincidencia parcial
                            .first())
                  if exists:
                      continue
@@ -164,7 +185,7 @@ def analyze_and_generate_alerts(device: Device) -> None:
                 tenant_id=device.tenant_id,
                 device_id=device.id,
                 raw_log=f"[{topics}] {msg}" if topics else msg,
-                log_level="info", # Default, can parse from topics
+                log_level="info", # Default, se podría parsear de topics
                 timestamp_equipo=ts_dt
             )
             entries.append(le)
@@ -172,22 +193,20 @@ def analyze_and_generate_alerts(device: Device) -> None:
         if entries:
             db.session.add_all(entries)
             db.session.flush()
-            logging.info(f"monitoring: persistidos {len(entries)} logs device_id={device.id}")
+            logging.info(f"[INFO] monitoring: persistidos {len(entries)} logs device_id={device.id}")
         
         # Paso 3: Análisis IA
         analysis_result = analyze_device_context(data)
         
         # Paso 4: Crear Alerta (Reporte)
-        # We create a single alert summarizing the findings
         analysis_text = analysis_result.get("analysis", "")
         recommendations = analysis_result.get("recommendations", [])
         
         if not analysis_text:
-            logging.info("monitoring: IA no retornó análisis.")
+            logging.info("[INFO] monitoring: IA no retornó análisis.")
             return
 
-        # Determine severity based on content or heuristics
-        # Simple keyword matching for severity
+        # Determinación de severidad
         severity = "Aviso"
         lower_analysis = analysis_text.lower()
         if "critical" in lower_analysis or "failure" in lower_analysis or "attack" in lower_analysis:
@@ -195,14 +214,14 @@ def analyze_and_generate_alerts(device: Device) -> None:
         if "warning" in lower_analysis or "high" in lower_analysis:
             severity = "Alerta Menor"
         
-        # Check heuristics from data for override
+        # Override por heurística local
         heuristics = data.get("heuristics", [])
         if any("critical" in h.lower() for h in heuristics):
             severity = "Alerta Crítica"
 
         rec_text = "; ".join(recommendations)
         
-        # Dedupe check: don't spam if identical report recently
+        # Evitar spam de alertas idénticas (Ventana de 1 hora)
         window_start = now - timedelta(hours=1)
         exists = (Alert.query
                  .filter_by(tenant_id=device.tenant_id, device_id=device.id)
@@ -211,9 +230,7 @@ def analyze_and_generate_alerts(device: Device) -> None:
                  .first())
 
         if exists:
-             # Update existing? Or just skip.
-             # If severity changed, maybe update.
-             logging.debug(f"monitoring: Reporte reciente existe, saltando alerta device_id={device.id}")
+             logging.debug(f"[DEBUG] monitoring: Reporte reciente existe, saltando alerta device_id={device.id}")
         else:
             alert = Alert(
                 tenant_id=device.tenant_id,
@@ -226,22 +243,29 @@ def analyze_and_generate_alerts(device: Device) -> None:
                 comentario_ultimo="Generado automáticamente por DeepSeek"
             )
             db.session.add(alert)
-            logging.info(f"monitoring: Alerta Forense creada device_id={device.id}")
+            logging.info(f"[INFO] monitoring: Alerta Forense creada device_id={device.id}")
 
         db.session.commit()
         
     except Exception as ex:
-        logging.error(f"monitoring: error general device_id={device.id}: {ex}")
+        logging.error(f"[ERROR] monitoring: error general device_id={device.id}: {ex}")
         db.session.rollback()
 
-# Helper for manual log fetching if needed by other services (retained for compatibility)
+# Helper legado (mantener compatibilidad)
 def get_router_logs(device: Device, since_ts: Optional[datetime] = None) -> List[Dict[str, Any]]:
     """
-    Legacy wrapper using DeviceMiner to fetch logs.
+    Wrapper legado para obtener logs. Utiliza DeviceMiner internamente.
+
+    Args:
+        device (Device): Dispositivo.
+        since_ts (Optional[datetime]): Timestamp inicial (ignorado en minería actual).
+
+    Returns:
+        List[Dict[str, Any]]: Lista de logs normalizados.
     """
     miner = DeviceMiner(device)
     data = miner.mine()
-    # Normalize back to old structure if needed
+
     logs = []
     for l in data.get("logs", []):
          ts = _safe_parse_iso_datetime(_entry_timestamp_to_iso(l)) or datetime.utcnow()

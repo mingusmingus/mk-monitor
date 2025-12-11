@@ -4,13 +4,15 @@ import StatusBadge from './StatusBadge.jsx'
 
 /**
  * AIDiagnosisCard
- * Visualizes forensic data analysis from the AI Provider.
+ *
+ * Componente que visualiza el diagnóstico forense generado por el sistema de IA.
+ * Muestra la causa raíz, severidad, recomendaciones y evidencia técnica raw.
  *
  * Props:
- * - data: Object (The full forensic data JSON)
+ * - data: Object (Objeto JSON completo de datos forenses).
  */
 const AIDiagnosisCard = ({ data }) => {
-  // Defensive Rendering
+  // Renderizado defensivo: Si no hay análisis, no mostrar nada.
   if (!data || !data.analysis) {
     return null
   }
@@ -20,14 +22,7 @@ const AIDiagnosisCard = ({ data }) => {
 
   const [isEvidenceOpen, setIsEvidenceOpen] = useState(false)
 
-  // Determine severity for badge (mapping from analysis severity to StatusBadge expected string if needed)
-  // Assuming analysis.severity matches StatusBadge expectations or we pass it directly.
-  // StatusBadge expects: 'Alerta Crítica', 'Alerta Severa', 'Alerta Menor', or defaults to info.
-  // The memory says AI analysis severity levels are: 'warning', 'minor', 'major', 'critical'.
-  // And they map to database states: 'Aviso', 'Alerta Menor', 'Alerta Severa', 'Alerta Crítica'.
-  // We should map them here or assume the backend sends the mapped string.
-  // Let's implement a mapper just in case the backend sends the English key.
-
+  // Mapeo de severidad del análisis a los estados visuales esperados por StatusBadge
   const mapSeverity = (sev) => {
     const s = sev?.toLowerCase()
     if (s === 'critical' || s === 'alerta crítica') return 'Alerta Crítica'
@@ -41,7 +36,7 @@ const AIDiagnosisCard = ({ data }) => {
   return (
     <div className="card" style={{ borderLeft: `4px solid var(--color-accent-${getSeverityColorToken(displaySeverity)})`, marginBottom: '24px' }}>
 
-      {/* Header */}
+      {/* Encabezado */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
         <div>
            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
@@ -52,7 +47,7 @@ const AIDiagnosisCard = ({ data }) => {
         </div>
       </div>
 
-      {/* Body: Root Cause */}
+      {/* Cuerpo: Causa Raíz */}
       <div style={{ marginBottom: '24px' }}>
          <h4 className="body-md" style={{ fontWeight: 600, marginBottom: '8px' }}>Causa Raíz Detectada:</h4>
          <p className="body-md text-secondary" style={{ lineHeight: '1.6' }}>
@@ -60,7 +55,7 @@ const AIDiagnosisCard = ({ data }) => {
          </p>
       </div>
 
-      {/* Actions: Recommendations */}
+      {/* Acciones: Recomendaciones */}
       {recommendations && recommendations.length > 0 && (
           <div style={{ marginBottom: '24px' }}>
               <h4 className="body-md" style={{ fontWeight: 600, marginBottom: '8px' }}>Recomendaciones:</h4>
@@ -78,7 +73,7 @@ const AIDiagnosisCard = ({ data }) => {
           </div>
       )}
 
-      {/* Footer: Technical Evidence Accordion */}
+      {/* Pie: Acordeón de Evidencia Técnica */}
       <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
           <button
             onClick={() => setIsEvidenceOpen(!isEvidenceOpen)}
@@ -104,7 +99,7 @@ const AIDiagnosisCard = ({ data }) => {
                           {JSON.stringify(telemetry, null, 2)}
                       </pre>
                   ) : (
-                      <p className="caption text-muted">No raw telemetry available.</p>
+                      <p className="caption text-muted">No hay telemetría raw disponible.</p>
                   )}
               </div>
           )}
@@ -114,12 +109,15 @@ const AIDiagnosisCard = ({ data }) => {
   )
 }
 
+/**
+ * Helper para obtener el token de color del tema basado en la severidad.
+ */
 function getSeverityColorToken(severity) {
     switch(severity) {
         case 'Alerta Crítica': return 'danger';
-        case 'Alerta Severa': return 'warning'; // Using warning for severe as per design usually orange/yellow, but could be 'danger' too. Theme has 'warning' (orange) and 'danger' (red).
-        case 'Alerta Menor': return 'secondary'; // Green? Or maybe 'warning' if yellow. Theme has 'secondary' (green).
-        default: return 'primary'; // Blue
+        case 'Alerta Severa': return 'warning';
+        case 'Alerta Menor': return 'secondary';
+        default: return 'primary';
     }
 }
 

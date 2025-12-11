@@ -2,9 +2,14 @@ import { useEffect, useState } from 'react'
 import client from '../api/client'
 import useAuth from '../hooks/useAuth.js'
 
-// Hook para leer salud de dispositivos desde /api/health/devices.
-// Gating por authReady + token.
-// DEBUG: logs con prefijo [Hook] (remover tras estabilizar).
+/**
+ * Hook personalizado para obtener el estado de salud de los dispositivos.
+ *
+ * Consulta el endpoint /api/health/devices y gestiona los estados de carga y error.
+ * Requiere que la autenticación esté lista.
+ *
+ * @returns {Object} { devices: Array, loading: Boolean, error: Error }
+ */
 export default function useDeviceHealth() {
   const [devices, setDevices] = useState([])
   const [loading, setLoading] = useState(false)
@@ -13,8 +18,8 @@ export default function useDeviceHealth() {
 
   useEffect(() => {
     const load = async () => {
+      // Evitar fetch si la autenticación no está lista
       if (!authReady || !token) {
-        console.debug('[Hook] useDeviceHealth skip (authReady/token no listos)')
         return
       }
       setLoading(true)
@@ -31,5 +36,6 @@ export default function useDeviceHealth() {
     load()
   }, [authReady, token])
 
+  // Considerar cargando mientras se espera la autenticación
   return { devices, loading: loading || (!authReady || !token), error }
 }

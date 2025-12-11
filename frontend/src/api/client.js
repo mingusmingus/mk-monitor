@@ -1,22 +1,27 @@
-// Cliente HTTP base (Axios) para consumir el backend Flask.
+/**
+ * Cliente HTTP Base (Axios) para la comunicación con el Backend.
+ *
+ * Gestiona:
+ * - Inyección automática del token de autenticación.
+ * - Manejo global de errores (401 Expirado, 402 Pago Requerido, 403 Suspendido).
+ */
 import axios from 'axios'
 
 const client = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 })
 
-// Interceptor de request: leer SIEMPRE token fresco desde localStorage
+// Interceptor de Solicitud: Inyecta el token Bearer si existe
 client.interceptors.request.use((config) => {
   const t = localStorage.getItem('auth_token')
   if (t) {
     config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${t}`
   }
-  // console.debug('[HTTP] request', config.url, 'Auth?', !!t)
   return config
 })
 
-// Helper para evitar múltiples ejecuciones en ráfaga de ciertos status
+// Helper para evitar rebotes de eventos en errores simultáneos
 let lastHandledKey = null
 const alreadyHandled = (key) => {
   if (lastHandledKey === key) return true
@@ -27,6 +32,7 @@ const alreadyHandled = (key) => {
   return false
 }
 
+// Interceptor de Respuesta: Manejo centralizado de errores de estado
 client.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -39,6 +45,7 @@ client.interceptors.response.use(
     const t = localStorage.getItem('auth_token')
     const authReady = window.__AUTH_READY === true
 
+    // 401 Unauthorized: Sesión expirada o inválida
     if (status === 401) {
       const reason = response.data?.reason
       const message = response.data?.message || ''
@@ -49,30 +56,27 @@ client.interceptors.response.use(
         return Promise.reject(error)
       }
       if (isAuthRoute) {
-        // console.debug('[HTTP] 401 en ruta de auth, ignorado')
         return Promise.reject(error)
       }
       if (!t) {
-        // console.debug('[HTTP] 401 sin token (pre-auth), ignorar')
         return Promise.reject(error)
       }
+      // Reintento en condiciones de carrera (race condition) al cargar la app
       if (!authReady) {
         if (!config.__retry401) {
-          // console.debug('[HTTP] 401 con token pero authReady=false (race). Reintentando...')
           await new Promise(r => setTimeout(r, 120))
           config.__retry401 = true
           return client(config)
         }
-        // console.debug('[HTTP] 401 tras reintento race. Marcando expirado.')
       }
-      // console.warn('[HTTP] 401 definitivo. Disparando evento auth:expired')
+
       if (!alreadyHandled('401-default')) {
         window.dispatchEvent(new CustomEvent('auth:expired'))
       }
       return Promise.reject(error)
     }
 
-    // 402: pago requerido -> redirigir a /subscription y abrir upsell
+    // 402 Payment Required: Redirigir a suscripción/upsell
     if (status === 402) {
       if (!alreadyHandled('402')) {
         if (window.location.pathname !== '/subscription') {
@@ -86,7 +90,7 @@ client.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    // 403 / 423: tenant suspendido o restringido. Mantener sesión, actualizar bandera.
+    // 403 Forbidden / 423 Locked: Tenant suspendido o restringido
     if (status === 403 || status === 423) {
       const tenantStatus = response.data?.tenant_status
       if (tenantStatus) {

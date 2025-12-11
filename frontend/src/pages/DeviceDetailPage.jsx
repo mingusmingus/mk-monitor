@@ -10,8 +10,10 @@ import AIDiagnosisCard from '../components/AIDiagnosisCard.jsx'
 import InterfacesTable from '../components/InterfacesTable.jsx'
 
 /**
- * Device Detail Page Redesign
- * - CSS: src/styles/pages/detail.css
+ * Device Detail Page (Rediseñada)
+ *
+ * Página de detalle de un dispositivo. Muestra información general, diagnósticos de IA,
+ * interfaces, vecinos y alertas activas.
  */
 export default function DeviceDetailPage() {
   const { deviceId } = useParams()
@@ -28,17 +30,15 @@ export default function DeviceDetailPage() {
 
   const isSuspended = tenantStatus === 'suspendido'
 
-  // Mock data for AI Diagnosis and Interfaces since backend evolution is mentioned
-  // Ideally this would come from `device.forensic_data` or similar.
+  // Datos mockeados de IA y Telemetría Forense (Simulación de backend real)
   const [forensicData, setForensicData] = useState(null)
 
   useEffect(() => {
-    // Parallel fetch
+    // Carga paralela de datos
     const fetchAll = async () => {
         setLoading(true)
         try {
-            // Mock device info fetch (usually this would be await getDevice(deviceId))
-            // Simulating fetching a device object that contains the new structure
+            // Mock de fetch de dispositivo (reemplazar por llamada real en producción)
             const mockDevice = {
                 id: deviceId,
                 ip_address: "192.168.88.1",
@@ -47,12 +47,12 @@ export default function DeviceDetailPage() {
                 uptime: "14d 2h 12m",
                 firmware: "RouterOS v7.1.5",
                 model: "RB4011iGS+",
-                // Forensic Data Mining Structure
+                // Estructura de Minería de Datos Forense
                 forensic_data: {
                     analysis: {
                         severity: "Alerta Menor",
-                        root_cause: "High latency detected on WAN interface due to saturation.",
-                        recommendations: ["Check ISP bandwidth", "Review QoS policies"]
+                        root_cause: "Latencia alta detectada en interfaz WAN por saturación.",
+                        recommendations: ["Verificar ancho de banda ISP", "Revisar políticas QoS"]
                     },
                     telemetry: {
                         cpu_load: 12,
@@ -76,20 +76,14 @@ export default function DeviceDetailPage() {
                 }
             }
 
-            // Try to fetch real data if API available, else use mock
-            // In a real scenario, we would do:
-            // const res = await client.get(`/devices/${deviceId}`)
-            // setDevice(res.data)
-            // But for this task, we set the mock with the structure we need to visualize.
             setDevice(mockDevice)
             setForensicData(mockDevice.forensic_data)
 
-
-            // Fetch Alerts
+            // Cargar Alertas
             const alertsRes = await getAlerts({ device_id: Number(deviceId) })
             setAlerts(alertsRes.data || [])
 
-            // Fetch Logs
+            // Cargar Logs Iniciales
             await loadLogs()
 
         } catch(e) {
@@ -111,7 +105,7 @@ export default function DeviceDetailPage() {
         const res = await client.get(`/devices/${deviceId}/logs?${params.toString()}`)
         setLogs(res.data || [])
     } catch (e) {
-        console.warn('Error loading logs', e)
+        console.warn('Error cargando logs', e)
     }
   }
 
@@ -122,7 +116,7 @@ export default function DeviceDetailPage() {
     setAlerts(alertsRes.data || [])
   }
 
-  // Safe access to nested properties
+  // Acceso seguro a propiedades anidadas
   const systemHealth = forensicData?.telemetry?.system?.health
   const neighbors = forensicData?.telemetry?.neighbors || []
   const interfaces = forensicData?.telemetry?.interfaces || []
@@ -130,7 +124,7 @@ export default function DeviceDetailPage() {
   return (
     <div className="detail-page fade-in">
 
-      {/* Header */}
+      {/* Encabezado */}
       <header className="detail-header">
         <div>
             <button
@@ -149,7 +143,7 @@ export default function DeviceDetailPage() {
         </div>
       </header>
 
-      {/* Navigation Tabs */}
+      {/* Pestañas de Navegación */}
       <div style={{ display: 'flex', gap: '24px', borderBottom: '1px solid var(--color-border)', marginBottom: '24px', paddingBottom: '0' }}>
           <button
             className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
@@ -193,43 +187,43 @@ export default function DeviceDetailPage() {
       </div>
 
 
-      {/* Main Grid Layout */}
+      {/* Diseño de Grilla Principal */}
       <div className="detail-grid">
 
-        {/* Left Column (Main Info & Charts) */}
+        {/* Columna Izquierda (Info Principal & Gráficos) */}
         <div className="left-column">
 
-            {/* AI Diagnosis Card */}
+            {/* Tarjeta de Diagnóstico IA */}
             {forensicData && (
                 <AIDiagnosisCard data={forensicData} />
             )}
 
             {activeTab === 'overview' && (
                 <>
-                    {/* Basic Info Card */}
+                    {/* Tarjeta de Información Básica */}
                     <Card>
                         <h3 className="h3" style={{ marginBottom: '16px' }}>Información del Sistema</h3>
                         <div className="info-grid">
-                            <InfoItem label="Dirección IP" value={device?.ip_address || "Loading..."} />
-                            <InfoItem label="MAC Address" value={device?.mac_address || "Loading..."} />
-                            <InfoItem label="Ubicación" value={device?.location || "Loading..."} />
+                            <InfoItem label="Dirección IP" value={device?.ip_address || "Cargando..."} />
+                            <InfoItem label="MAC Address" value={device?.mac_address || "Cargando..."} />
+                            <InfoItem label="Ubicación" value={device?.location || "Cargando..."} />
                             <InfoItem
                                 label="Uptime"
                                 value={
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <span>{device?.uptime || "Loading..."}</span>
-                                        {/* Hardware Widget: Voltage & Temperature */}
+                                        <span>{device?.uptime || "Cargando..."}</span>
+                                        {/* Widget de Salud de Hardware: Voltaje y Temperatura */}
                                         {systemHealth && (
                                             <div style={{ display: 'flex', gap: '8px', fontSize: '12px' }}>
                                                 {systemHealth.voltage && (
-                                                    <span title={`Voltage: ${systemHealth.voltage}V`} style={{ display: 'flex', alignItems: 'center', gap: '2px', color: 'var(--color-text-secondary)' }}>
-                                                        <span style={{ color: 'var(--color-accent-warning)' }}>⚡</span>
+                                                    <span title={`Voltaje: ${systemHealth.voltage}V`} style={{ display: 'flex', alignItems: 'center', gap: '2px', color: 'var(--color-text-secondary)' }}>
+                                                        <span style={{ color: 'var(--color-accent-warning)' }}>[V]</span>
                                                         {systemHealth.voltage}V
                                                     </span>
                                                 )}
                                                 {systemHealth.temperature && (
-                                                    <span title={`Temperature: ${systemHealth.temperature}°C`} style={{ display: 'flex', alignItems: 'center', gap: '2px', color: 'var(--color-text-secondary)' }}>
-                                                        <span style={{ color: getTempColor(systemHealth.temperature) }}>🌡</span>
+                                                    <span title={`Temperatura: ${systemHealth.temperature}°C`} style={{ display: 'flex', alignItems: 'center', gap: '2px', color: 'var(--color-text-secondary)' }}>
+                                                        <span style={{ color: getTempColor(systemHealth.temperature) }}>[T]</span>
                                                         {systemHealth.temperature}°C
                                                     </span>
                                                 )}
@@ -238,12 +232,12 @@ export default function DeviceDetailPage() {
                                     </div>
                                 }
                             />
-                            <InfoItem label="Versión Firmware" value={device?.firmware || "Loading..."} />
-                            <InfoItem label="Modelo" value={device?.model || "Loading..."} />
+                            <InfoItem label="Versión Firmware" value={device?.firmware || "Cargando..."} />
+                            <InfoItem label="Modelo" value={device?.model || "Cargando..."} />
                         </div>
                     </Card>
 
-                    {/* Performance Charts Placeholder */}
+                    {/* Placeholder de Gráficos de Rendimiento */}
                     <Card>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
                             <h3 className="h3">Rendimiento</h3>
@@ -253,7 +247,7 @@ export default function DeviceDetailPage() {
                             </select>
                         </div>
                         <div style={{ height: '200px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '4px' }}>
-                            {/* Fake Chart Bars */}
+                            {/* Barras Falsas para UI */}
                             {Array.from({ length: 40 }).map((_, i) => (
                                 <div key={i} style={{
                                     width: '100%',
@@ -264,8 +258,8 @@ export default function DeviceDetailPage() {
                             ))}
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                            <span>CPU Load: {forensicData?.telemetry?.cpu_load ?? 12}%</span>
-                            <span>Memory: {forensicData?.telemetry?.memory_usage ?? 45}%</span>
+                            <span>Carga CPU: {forensicData?.telemetry?.cpu_load ?? 12}%</span>
+                            <span>Memoria: {forensicData?.telemetry?.memory_usage ?? 45}%</span>
                             <span>Temp: {systemHealth?.temperature ?? 42}°C</span>
                         </div>
                     </Card>
@@ -328,7 +322,7 @@ export default function DeviceDetailPage() {
                         </div>
                     ) : (
                         <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                            No neighbors detected.
+                            [INFO] No se detectaron vecinos.
                         </div>
                     )}
                 </Card>
@@ -336,10 +330,10 @@ export default function DeviceDetailPage() {
 
         </div>
 
-        {/* Right Column (Status & Alerts) */}
+        {/* Columna Derecha (Estado & Alertas) */}
         <div className="right-column">
 
-            {/* Status Card */}
+            {/* Tarjeta de Estado */}
             <Card statusColor="success" elevated>
                 <div className="status-card-content">
                     <div className="status-label">Estado Actual</div>
@@ -360,7 +354,7 @@ export default function DeviceDetailPage() {
                 </div>
             </Card>
 
-            {/* Quick Actions */}
+            {/* Acciones Rápidas */}
             <Card>
                 <h3 className="h3" style={{ marginBottom: '16px' }}>Acciones Rápidas</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -372,7 +366,7 @@ export default function DeviceDetailPage() {
                 </div>
             </Card>
 
-            {/* Active Alerts */}
+            {/* Alertas Activas */}
             <Card>
                 <h3 className="h3" style={{ marginBottom: '16px' }}>Alertas Activas</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

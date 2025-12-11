@@ -1,7 +1,8 @@
 """
-Rutas de dispositivos:
+Rutas para gestión de Dispositivos.
 
-- CRUD de equipos MikroTik y validación de límites por plan.
+Provee endpoints para listar y crear dispositivos Mikrotik,
+asegurando el cumplimiento de límites según el plan contratado.
 """
 from flask import Blueprint, request, jsonify, g
 from ..auth.decorators import require_auth
@@ -17,9 +18,13 @@ device_bp = Blueprint("devices", __name__)
 @require_auth()
 def list_devices():
     """
-    Devuelve SOLO los dispositivos del tenant actual g.tenant_id.
-    Incluye health_status calculado.
-    Importante: NO exponer credenciales cifradas (username_encrypted/password_encrypted) en la salida JSON.
+    Lista los dispositivos pertenecientes al tenant actual.
+
+    Incluye el estado de salud calculado en base a alertas activas.
+    Nota: Las credenciales sensibles se excluyen de la respuesta.
+
+    Returns:
+        Response: Lista de objetos JSON representando los dispositivos.
     """
     devices = device_service.list_devices_for_tenant(g.tenant_id)
     result = []
@@ -43,11 +48,21 @@ def list_devices():
 @limiter.limit("5/minute; 50/hour", override_defaults=False)
 def create_device():
     """
-    Crea un dispositivo. Solo admin.
-    - Valida límite de plan del tenant.
-    - Si supera límite: 402 + { upsell: true, message, required_plan_hint }
-    - Si OK, almacena device cifrando credenciales si vinieran en claro.
-    Body: { name, ip_address, port, username(_encrypted)?, password(_encrypted)?, ... }
+    Registra un nuevo dispositivo en el sistema.
+
+    Requiere rol de 'admin'. Valida que el tenant no haya excedido el límite
+    de dispositivos permitidos por su plan.
+
+    Body:
+        name (str): Nombre del dispositivo.
+        ip_address (str): Dirección IP.
+        port (int): Puerto de gestión.
+        username (str): Usuario (se almacenará cifrado).
+        password (str): Contraseña (se almacenará cifrada).
+
+    Returns:
+        Response: 201 Created con el ID del dispositivo.
+                  402 Payment Required si se excede el límite del plan.
     """
     data = request.get_json(silent=True) or {}
     try:

@@ -1,96 +1,14 @@
-version: "3.9"
-
-networks:
-  mknet:
-    driver: bridge
-
-volumes:
-  # Volumen persistente para PostgreSQL
-  db_data:
-
 services:
-  postgres:
-    image: postgres:15
-    container_name: mkmonitor-postgres
-    restart: unless-stopped
+  db:
+    image: postgres:15-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: mkmonitor
+      POSTGRES_PASSWORD: mkmonitor
+      POSTGRES_DB: mkmonitor
     ports:
       - "5432:5432"
-    volumes:
-      # Persistencia de datos de la base de datos
-      - db_data:/var/lib/postgresql/data
-    networks:
-      - mknet
-
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: mkmonitor-pgadmin
-    restart: unless-stopped
-    environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
-    ports:
-      - "5050:80"
-    depends_on:
-      - postgres
-    networks:
-      - mknet
-
-  redis:
-    image: redis:7-alpine
-    container_name: mkmonitor-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    networks:
-      - mknet
-
-  # API Flask (Gunicorn)
-  backend:
-    build:
-      context: ../  # raíz del repo
-      dockerfile: backend/Dockerfile
-    container_name: mkmonitor-backend
-    restart: unless-stopped
-    # Carga variables desde archivo .env dentro de la carpeta infra
-    # Nota: el docker-compose.yml vive en infra/, por eso el path relativo es ./.env
-    env_file:
-      - ./.env
-    environment:
-      APP_ENV: ${APP_ENV:-dev}
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${POSTGRES_DB}
-      DB_USER: ${POSTGRES_USER}
-      DB_PASS: ${POSTGRES_PASSWORD}
-      JWT_SECRET: ${JWT_SECRET}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
-      REDIS_URL: redis://redis:6379/0
-      RATE_LIMITS_DEFAULT: "200/minute,2000/hour"
-    ports:
-      - "5000:5000"
-    depends_on:
-      - postgres
-      - redis
-    networks:
-      - mknet
-
-  # Frontend estático (Nginx)
-  frontend:
-    build:
-      context: ../  # raíz del repo
-      dockerfile: frontend/Dockerfile
-    container_name: mkmonitor-frontend
-    restart: unless-stopped
-    environment:
-      VITE_API_URL: http://localhost:5000/api
-    ports:
-      - "8080:80"
-    depends_on:
-      - backend
-    networks:
-      - mknet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mkmonitor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

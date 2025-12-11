@@ -1,7 +1,8 @@
 """
-Rutas de autenticación:
+Rutas de Autenticación.
 
-- Login, registro y verificación de sesión.
+Provee endpoints para el inicio de sesión, registro de nuevos usuarios y
+verificación del estado de autenticación (sesión actual).
 """
 from flask import Blueprint, request, jsonify
 from ..auth.password import verify_password, hash_password
@@ -23,7 +24,7 @@ from ..services.subscription_service import create_initial_subscription
 
 from ..auth.decorators import require_auth
 
-# Configure security params
+# Configuración de parámetros de seguridad anti fuerza bruta
 configure_security(
     max_attempts=int(getattr(Config, "MAX_FAILED_ATTEMPTS", 5)),
     lockout_sec=int(getattr(Config, "LOCKOUT_SECONDS", 300))
@@ -36,8 +37,16 @@ logger = logging.getLogger(__name__)
 @limiter.limit("10/minute; 50/hour", override_defaults=False)
 def login():
     """
-    Body: { email, password }
-    Emite JWT si credenciales correctas.
+    Inicia sesión de usuario y emite un token JWT.
+
+    Body:
+        email (str): Correo electrónico del usuario.
+        password (str): Contraseña del usuario.
+
+    Returns:
+        Response: Objeto JSON con el token JWT y detalles del usuario si las credenciales son válidas.
+                  Error 429 si se exceden los intentos permitidos.
+                  Error 401 si las credenciales son inválidas.
     """
     data = request.get_json(silent=True) or {}
     email = data.get("email", "").strip().lower()
@@ -47,12 +56,12 @@ def login():
     lock_key = (ip, email)
     if is_login_locked(lock_key):
         logger.info("[AUTH] login blocked ip=%s email=%s", ip, email)
-        return jsonify({"error": "Demasiados intentos. Intenta nuevamente más tarde."}), 429
+        return jsonify({"error": "Demasiados intentos. Intente nuevamente más tarde."}), 429
 
     user = User.query.filter_by(email=email).first()
     if not user:
         count = register_login_failure(lock_key)
-        # We don't want to reveal if user exists, but we block if too many attempts
+        # Bloquear si hay demasiados intentos para evitar enumeración de usuarios
         status = 429 if count >= int(getattr(Config, "MAX_FAILED_ATTEMPTS", 5)) else 401
         logger.warning("[AUTH] login failed (user not found) ip=%s email=%s count=%s", ip, email, count)
         return jsonify({"error": "Credenciales inválidas"}), status
@@ -77,7 +86,19 @@ def login():
 @limiter.limit("5/minute; 30/hour", override_defaults=False)
 def register():
     """
-    Registro público.
+    Registra un nuevo Tenant y su Usuario Administrador inicial.
+
+    Body:
+        email (str): Correo electrónico del usuario.
+        password (str): Contraseña (mínimo 8 caracteres).
+        full_name (str): Nombre completo (opcional).
+        website (str): Honeypot para bots (debe estar vacío).
+
+    Returns:
+        Response: 201 Created si el registro es exitoso.
+                  400 Bad Request si los datos son inválidos.
+                  409 Conflict si el email ya existe.
+                  429 Too Many Requests si hay exceso de intentos.
     """
     data = request.get_json(silent=True) or {}
     email = (data.get("email") or "").strip().lower()
@@ -91,7 +112,7 @@ def register():
     if honeypot:
         return jsonify({"error": "Bad request"}), 400
     if is_registration_locked(reg_key):
-        return jsonify({"error": "Demasiados intentos. Intenta nuevamente más tarde."}), 429
+        return jsonify({"error": "Demasiados intentos. Intente nuevamente más tarde."}), 429
 
     if not email:
         register_registration_failure(reg_key)
@@ -135,12 +156,17 @@ def register():
 @require_auth()
 def auth_me():
     """
-    Verificación rápida de validez de token JWT.
-    Respuesta: { ok:true, sub, tenant_id, role }
+    Verifica la validez del token JWT actual.
+
+    Returns:
+        Response: Estado de la autenticación y detalles básicos del usuario.
     """
+    # Nota: require_auth ya valida el token y puebla 'g' (no 'logger' con atributos dinámicos directamente)
+    # Ajustando para usar el objeto global 'g' si está disponible, o fallback seguro.
+    from flask import g
     return jsonify({
         "ok": True,
-        "sub": getattr(logger, "user_id", None) or None,  # fallback simple
-        "tenant_id": getattr(logger, "tenant_id", None) or None,
-        "role": getattr(logger, "role", None) or None
+        "sub": getattr(g, "user_id", None),
+        "tenant_id": getattr(g, "tenant_id", None),
+        "role": getattr(g, "role", None)
     }), 200

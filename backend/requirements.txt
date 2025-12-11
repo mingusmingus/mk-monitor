@@ -22,4 +22,4 @@ paramiko>=3.0.0           # Fallback SSH para comandos CLI
 # Optional: PDF export (pure Python, sin dependencias nativas)
 reportlab==4.2.0
 gunicorn>=21.2.0
-pytest==8.3.2reportlab
+pytest==8.3.2

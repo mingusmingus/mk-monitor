@@ -7,7 +7,17 @@ tanto en entornos de desarrollo como de producción (vía servidores WSGI).
 Ejemplo de ejecución con Gunicorn:
     gunicorn backend.wsgi:app --bind 0.0.0.0:8000
 """
-from app import create_app
+import sys
+import os
+from pathlib import Path
+
+# Agregar la raíz del proyecto al path para resolver 'backend' como módulo
+# Esto permite ejecutar 'python backend/wsgi.py' sin errores de importación
+current_dir = Path(__file__).resolve().parent
+project_root = current_dir.parent
+sys.path.insert(0, str(project_root))
+
+from backend.app import create_app
 
 app = create_app()
 

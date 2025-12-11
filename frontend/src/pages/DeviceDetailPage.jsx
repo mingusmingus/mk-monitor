@@ -6,14 +6,20 @@ import useAuth from '../hooks/useAuth.js'
 import Card from '../components/ui/Card.jsx'
 import Button from '../components/ui/Button.jsx'
 import Input from '../components/ui/Input.jsx'
+
+// Nuevos componentes visuales
 import AIDiagnosisCard from '../components/AIDiagnosisCard.jsx'
+import VitalSigns from '../components/VitalSigns.jsx'
 import InterfacesTable from '../components/InterfacesTable.jsx'
+import NetworkTopology from '../components/NetworkTopology.jsx'
+
+// Estilos globales de la página (layout)
+import '../styles/pages/detail.css'
 
 /**
- * Device Detail Page (Rediseñada)
+ * Device Detail Page (Rediseñada - Fase 2)
  *
- * Página de detalle de un dispositivo. Muestra información general, diagnósticos de IA,
- * interfaces, vecinos y alertas activas.
+ * Página de detalle de un dispositivo. Integra visualización forense avanzada.
  */
 export default function DeviceDetailPage() {
   const { deviceId } = useParams()
@@ -29,65 +35,72 @@ export default function DeviceDetailPage() {
   const [activeTab, setActiveTab] = useState('overview') // 'overview', 'interfaces', 'neighbors'
 
   const isSuspended = tenantStatus === 'suspendido'
-
-  // Datos mockeados de IA y Telemetría Forense (Simulación de backend real)
   const [forensicData, setForensicData] = useState(null)
 
+  // MOCK DATA GENERATOR (For fallback/dev)
+  const getMockForensicData = (baseDevice) => ({
+        analysis: {
+            severity: "Alerta Menor",
+            root_cause: "Latencia intermitente detectada en interfaz WAN.",
+            summary: "El dispositivo opera dentro de parámetros normales, aunque se detectó saturación puntual en la interfaz WAN durante las últimas 2 horas.",
+            recommendations: ["Verificar ancho de banda ISP", "Revisar políticas QoS", "Monitorear colas de tráfico"],
+            confidence_score: 0.92
+        },
+        security_audit: {
+            risk_score: 3,
+            insecure_ports: [21, 23] // FTP, Telnet open example
+        },
+        telemetry: {
+            cpu_load: 12,
+            memory_usage: 45,
+            uptime: 123456,
+            interfaces: [
+                { name: "ether1-wan", type: "ether", mac_address: "B8:69:F4:A1:B2:C1", mtu: 1500, tx_byte: 123456789, rx_byte: 987654321, running: true, stats: { fcs_error: 0, collisions: 0 } },
+                { name: "ether2-lan", type: "ether", mac_address: "B8:69:F4:A1:B2:C2", mtu: 1500, tx_byte: 54321, rx_byte: 12345, running: true, stats: { fcs_error: 50, collisions: 2 } },
+                { name: "wlan1", type: "wlan", mac_address: "B8:69:F4:A1:B2:C3", mtu: 1500, tx_byte: 0, rx_byte: 0, running: false, stats: {} }
+            ],
+            system: {
+                health: {
+                    voltage: 23.5, // Low voltage test
+                    temperature: 42
+                }
+            },
+            neighbors: [
+                { interface: "ether2-lan", ip: "192.168.88.2", identity: "SW-Core-01", platform: "MikroTik", version: "6.48.6", board: "CRS326" },
+                { interface: "ether2-lan", ip: "192.168.88.200", identity: "UAP-AC-Pro", platform: "Ubiquiti", version: "6.0.21" },
+                { interface: "ether1-wan", ip: "10.0.0.1", identity: "Cisco-ISR", platform: "Cisco IOS", version: "15.1" }
+            ]
+        }
+  })
+
+
   useEffect(() => {
-    // Carga paralela de datos
     const fetchAll = async () => {
         setLoading(true)
         try {
-            // Mock de fetch de dispositivo (reemplazar por llamada real en producción)
-            const mockDevice = {
-                id: deviceId,
-                ip_address: "192.168.88.1",
-                mac_address: "B8:69:F4:XX:XX:XX",
-                location: "Oficina Central - Rack 1",
-                uptime: "14d 2h 12m",
-                firmware: "RouterOS v7.1.5",
-                model: "RB4011iGS+",
-                // Estructura de Minería de Datos Forense
-                forensic_data: {
-                    analysis: {
-                        severity: "Alerta Menor",
-                        root_cause: "Latencia alta detectada en interfaz WAN por saturación.",
-                        recommendations: ["Verificar ancho de banda ISP", "Revisar políticas QoS"]
-                    },
-                    telemetry: {
-                        cpu_load: 12,
-                        memory_usage: 45,
-                        uptime: 123456,
-                        interfaces: [
-                            { name: "ether1", type: "ether", mac_address: "00:00:00:00:00:01", mtu: 1500, tx_byte: 1234567, rx_byte: 7654321, running: true, stats: { fcs_error: 0, collisions: 0 } },
-                            { name: "wlan1", type: "wlan", mac_address: "00:00:00:00:00:02", mtu: 1500, tx_byte: 12345, rx_byte: 54321, running: true, stats: { fcs_error: 50, collisions: 2 } }
-                        ],
-                        system: {
-                            health: {
-                                voltage: 24.1,
-                                temperature: 42
-                            }
-                        },
-                        neighbors: [
-                            { interface: "ether2", ip: "192.168.88.2", identity: "Switch-Core" },
-                            { interface: "wlan1", ip: "192.168.88.50", identity: "AP-Lobby" }
-                        ]
-                    }
-                }
-            }
+            // Fetch real device data
+            const res = await client.get(`/devices/${deviceId}`)
+            const deviceData = res.data
+            setDevice(deviceData)
 
-            setDevice(mockDevice)
-            setForensicData(mockDevice.forensic_data)
+            // Intenta usar data forense real si el backend la envía.
+            // Si no (porque el backend está en desarrollo o no tiene data), usa el mock para visualización.
+            if (deviceData.forensic_data) {
+                setForensicData(deviceData.forensic_data)
+            } else if (process.env.NODE_ENV === 'development') {
+                // Fallback para desarrollo: Visualizar UI con datos mock si no hay reales
+                setForensicData(getMockForensicData(deviceData))
+            }
 
             // Cargar Alertas
             const alertsRes = await getAlerts({ device_id: Number(deviceId) })
             setAlerts(alertsRes.data || [])
 
-            // Cargar Logs Iniciales
+            // Cargar Logs
             await loadLogs()
 
         } catch(e) {
-            console.error(e)
+            console.error("Error fetching device details", e)
         } finally {
             setLoading(false)
         }
@@ -116,173 +129,94 @@ export default function DeviceDetailPage() {
     setAlerts(alertsRes.data || [])
   }
 
-  // Acceso seguro a propiedades anidadas
+  // Safe accessors
   const systemHealth = forensicData?.telemetry?.system?.health
+  const cpuLoad = forensicData?.telemetry?.cpu_load
   const neighbors = forensicData?.telemetry?.neighbors || []
   const interfaces = forensicData?.telemetry?.interfaces || []
 
   return (
-    <div className="detail-page fade-in">
+    <div className="detail-page fade-in" style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
 
       {/* Encabezado */}
-      <header className="detail-header">
-        <div>
-            <button
-                onClick={() => navigate('/devices')}
-                className="back-link"
-            >
-                ← Volver a equipos
-            </button>
-            <h1 className="h1">Router Principal #{deviceId}</h1>
-            <p className="body-sm text-muted">Detalles operativos y monitoreo en tiempo real</p>
-        </div>
+      <header className="detail-header" style={{ marginBottom: '32px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+                <button
+                    onClick={() => navigate('/devices')}
+                    className="back-link"
+                    style={{ marginBottom: '8px', color: 'var(--color-text-secondary)', display: 'block' }}
+                >
+                    ← Volver a equipos
+                </button>
+                <h1 className="h1" style={{ fontSize: '28px', marginBottom: '4px' }}>
+                    {device?.identity || device?.model || `Router #${deviceId}`}
+                </h1>
+                <p className="body-sm text-muted">
+                    {device?.ip_address} • {device?.location}
+                </p>
 
-        <div style={{ display: 'flex', gap: '12px' }}>
-            <Button variant="ghost" disabled={isSuspended}>Reiniciar</Button>
-            <Button variant="primary" disabled={isSuspended}>Editar Configuración</Button>
+                {/* Vital Signs Widget Integration */}
+                {!loading && (
+                    <div style={{ marginTop: '8px', maxWidth: '400px' }}>
+                        <VitalSigns health={systemHealth} cpuLoad={cpuLoad} />
+                    </div>
+                )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+                <Button variant="ghost" disabled={isSuspended}>Reiniciar</Button>
+                <Button variant="primary" disabled={isSuspended}>Configuración</Button>
+            </div>
         </div>
       </header>
 
-      {/* Pestañas de Navegación */}
-      <div style={{ display: 'flex', gap: '24px', borderBottom: '1px solid var(--color-border)', marginBottom: '24px', paddingBottom: '0' }}>
-          <button
-            className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => setActiveTab('overview')}
-            style={{
-                background: 'none', border: 'none', padding: '12px 0',
-                borderBottom: activeTab === 'overview' ? '2px solid var(--color-accent-primary)' : '2px solid transparent',
-                fontWeight: activeTab === 'overview' ? 600 : 400,
-                color: activeTab === 'overview' ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
-                cursor: 'pointer'
-            }}
-          >
-            Visión General
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'interfaces' ? 'active' : ''}`}
-            onClick={() => setActiveTab('interfaces')}
-            style={{
-                background: 'none', border: 'none', padding: '12px 0',
-                borderBottom: activeTab === 'interfaces' ? '2px solid var(--color-accent-primary)' : '2px solid transparent',
-                fontWeight: activeTab === 'interfaces' ? 600 : 400,
-                color: activeTab === 'interfaces' ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
-                cursor: 'pointer'
-            }}
-          >
-            Interfaces
-          </button>
-           <button
-            className={`tab-btn ${activeTab === 'neighbors' ? 'active' : ''}`}
-            onClick={() => setActiveTab('neighbors')}
-            style={{
-                background: 'none', border: 'none', padding: '12px 0',
-                borderBottom: activeTab === 'neighbors' ? '2px solid var(--color-accent-primary)' : '2px solid transparent',
-                fontWeight: activeTab === 'neighbors' ? 600 : 400,
-                color: activeTab === 'neighbors' ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
-                cursor: 'pointer'
-            }}
-          >
-            Vecinos
-          </button>
+      {/* Tab Navigation */}
+      <div style={{ display: 'flex', gap: '32px', borderBottom: '1px solid var(--color-border)', marginBottom: '32px' }}>
+          {['overview', 'interfaces', 'neighbors'].map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: '12px 0',
+                    borderBottom: activeTab === tab ? '2px solid var(--color-accent-primary)' : '2px solid transparent',
+                    fontWeight: activeTab === tab ? 600 : 400,
+                    color: activeTab === tab ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+                    cursor: 'pointer',
+                    textTransform: 'capitalize',
+                    fontSize: '14px',
+                    transition: 'color 0.2s, border-color 0.2s'
+                }}
+              >
+                {tab === 'overview' ? 'Visión General' : tab === 'interfaces' ? 'Interfaces de Red' : 'Topología (Vecinos)'}
+              </button>
+          ))}
       </div>
 
 
-      {/* Diseño de Grilla Principal */}
-      <div className="detail-grid">
+      <div className="detail-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
 
-        {/* Columna Izquierda (Info Principal & Gráficos) */}
+        {/* Left Column */}
         <div className="left-column">
-
-            {/* Tarjeta de Diagnóstico IA */}
-            {forensicData && (
-                <AIDiagnosisCard data={forensicData} />
-            )}
 
             {activeTab === 'overview' && (
                 <>
-                    {/* Tarjeta de Información Básica */}
+                    <AIDiagnosisCard data={forensicData} loading={loading} />
+
                     <Card>
-                        <h3 className="h3" style={{ marginBottom: '16px' }}>Información del Sistema</h3>
-                        <div className="info-grid">
-                            <InfoItem label="Dirección IP" value={device?.ip_address || "Cargando..."} />
-                            <InfoItem label="MAC Address" value={device?.mac_address || "Cargando..."} />
-                            <InfoItem label="Ubicación" value={device?.location || "Cargando..."} />
-                            <InfoItem
-                                label="Uptime"
-                                value={
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <span>{device?.uptime || "Cargando..."}</span>
-                                        {/* Widget de Salud de Hardware: Voltaje y Temperatura */}
-                                        {systemHealth && (
-                                            <div style={{ display: 'flex', gap: '8px', fontSize: '12px' }}>
-                                                {systemHealth.voltage && (
-                                                    <span title={`Voltaje: ${systemHealth.voltage}V`} style={{ display: 'flex', alignItems: 'center', gap: '2px', color: 'var(--color-text-secondary)' }}>
-                                                        <span style={{ color: 'var(--color-accent-warning)' }}>[V]</span>
-                                                        {systemHealth.voltage}V
-                                                    </span>
-                                                )}
-                                                {systemHealth.temperature && (
-                                                    <span title={`Temperatura: ${systemHealth.temperature}°C`} style={{ display: 'flex', alignItems: 'center', gap: '2px', color: 'var(--color-text-secondary)' }}>
-                                                        <span style={{ color: getTempColor(systemHealth.temperature) }}>[T]</span>
-                                                        {systemHealth.temperature}°C
-                                                    </span>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                }
-                            />
-                            <InfoItem label="Versión Firmware" value={device?.firmware || "Cargando..."} />
-                            <InfoItem label="Modelo" value={device?.model || "Cargando..."} />
-                        </div>
-                    </Card>
-
-                    {/* Placeholder de Gráficos de Rendimiento */}
-                    <Card>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-                            <h3 className="h3">Rendimiento</h3>
-                            <select style={{ border: 'none', background: 'transparent', color: 'var(--color-text-muted)', fontSize: '13px' }}>
-                                <option>Última hora</option>
-                                <option>24 horas</option>
-                            </select>
-                        </div>
-                        <div style={{ height: '200px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '4px' }}>
-                            {/* Barras Falsas para UI */}
-                            {Array.from({ length: 40 }).map((_, i) => (
-                                <div key={i} style={{
-                                    width: '100%',
-                                    height: `${Math.random() * 80 + 20}%`,
-                                    backgroundColor: i % 2 === 0 ? 'var(--color-accent-primary)' : 'rgba(0,122,255,0.3)',
-                                    borderRadius: '2px'
-                                }}></div>
-                            ))}
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                            <span>Carga CPU: {forensicData?.telemetry?.cpu_load ?? 12}%</span>
-                            <span>Memoria: {forensicData?.telemetry?.memory_usage ?? 45}%</span>
-                            <span>Temp: {systemHealth?.temperature ?? 42}°C</span>
-                        </div>
-                    </Card>
-
-                    {/* Logs */}
-                    <Card>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                            <h3 className="h3">Logs del Sistema</h3>
-                            <Button variant="ghost" size="sm" onClick={() => loadLogs()}>Actualizar</Button>
-                        </div>
-
-                        <div className="filters" style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-                            <Input type="datetime-local" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} style={{ marginBottom: 0 }} />
-                            <Input type="datetime-local" value={fechaFin} onChange={e => setFechaFin(e.target.value)} style={{ marginBottom: 0 }} />
-                        </div>
-
-                        <div className="logs-container">
+                        <h3 className="h3" style={{ marginBottom: '16px' }}>Logs Recientes</h3>
+                        <div className="logs-container" style={{ maxHeight: '300px', overflowY: 'auto' }}>
                             {logs.length > 0 ? logs.map(l => (
-                                <div key={l.id} className="log-entry">
-                                    <span style={{ color: 'var(--color-accent-primary)' }}>[{l.timestamp_equipo || new Date().toISOString()}]</span> {l.raw_log}
+                                <div key={l.id} className="log-entry" style={{ fontSize: '12px', padding: '8px 0', borderBottom: '1px solid var(--color-border-subtle)' }}>
+                                    <span className="font-mono" style={{ color: 'var(--color-accent-primary)', marginRight: '8px' }}>
+                                        {new Date(l.timestamp_equipo || l.created_at).toLocaleTimeString()}
+                                    </span>
+                                    {l.raw_log}
                                 </div>
                             )) : (
-                                <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)' }}>No hay logs para mostrar</div>
+                                <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)' }}>No hay logs recientes.</div>
                             )}
                         </div>
                     </Card>
@@ -291,102 +225,56 @@ export default function DeviceDetailPage() {
 
             {activeTab === 'interfaces' && (
                 <Card>
-                    <h3 className="h3" style={{ marginBottom: '16px' }}>Interfaces de Red</h3>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <h3 className="h3">Interfaces Físicas & Lógicas</h3>
+                        <span className="body-sm text-muted">{interfaces.length} interfaces detectadas</span>
+                    </div>
                     <InterfacesTable interfaces={interfaces} />
                 </Card>
             )}
 
             {activeTab === 'neighbors' && (
                 <Card>
-                    <h3 className="h3" style={{ marginBottom: '16px' }}>Vecinos Detectados</h3>
-                    {neighbors && neighbors.length > 0 ? (
-                        <div style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                                <thead>
-                                    <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
-                                        <th style={{ padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Interfaz</th>
-                                        <th style={{ padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>IP</th>
-                                        <th style={{ padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Dispositivo (Identity)</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {neighbors.map((n, i) => (
-                                        <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <td style={{ padding: '12px 8px', fontWeight: 500 }}>{n.interface}</td>
-                                            <td style={{ padding: '12px 8px', fontFamily: 'monospace' }}>{n.ip}</td>
-                                            <td style={{ padding: '12px 8px', color: 'var(--color-text-secondary)' }}>{n.identity || '-'}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    ) : (
-                        <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                            [INFO] No se detectaron vecinos.
-                        </div>
-                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <h3 className="h3">Descubrimiento de Vecinos</h3>
+                        <span className="body-sm text-muted">Protocolos: CDP, LLDP, MNDP</span>
+                    </div>
+                    <NetworkTopology neighbors={neighbors} />
                 </Card>
             )}
 
         </div>
 
-        {/* Columna Derecha (Estado & Alertas) */}
+        {/* Right Column (Status & Quick Actions) */}
         <div className="right-column">
 
-            {/* Tarjeta de Estado */}
-            <Card statusColor="success" elevated>
-                <div className="status-card-content">
-                    <div className="status-label">Estado Actual</div>
-                    <div className="status-value">
-                        <span className="status-dot-large"></span>
-                        ONLINE
-                    </div>
-                    <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--color-border)', paddingTop: '16px' }}>
-                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
-                            <span style={{ fontSize: '20px', fontWeight: 600 }}>99.9%</span>
-                            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>SLA Mes</span>
-                         </div>
-                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
-                            <span style={{ fontSize: '20px', fontWeight: 600 }}>{alerts.length}</span>
-                            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Alertas</span>
-                         </div>
-                    </div>
+            <Card elevated>
+                <div style={{ paddingBottom: '16px', marginBottom: '16px', borderBottom: '1px solid var(--color-border)' }}>
+                     <div className="body-sm text-muted">Estado General</div>
+                     <div style={{ fontSize: '24px', fontWeight: 600, color: 'var(--color-accent-success)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                         <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'var(--color-accent-success)', boxShadow: '0 0 8px var(--color-accent-success)' }}></div>
+                         OPERATIVO
+                     </div>
                 </div>
-            </Card>
 
-            {/* Acciones Rápidas */}
-            <Card>
-                <h3 className="h3" style={{ marginBottom: '16px' }}>Acciones Rápidas</h3>
+                <h4 className="body-sm" style={{ fontWeight: 600, marginBottom: '12px' }}>Alertas Activas ({alerts.length})</h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <Button variant="secondary" fullWidth disabled={isSuspended}>Ver Tráfico en Vivo</Button>
-                    <Button variant="secondary" fullWidth disabled={isSuspended}>Descargar Backup</Button>
-                    <Button variant="secondary" fullWidth disabled={isSuspended}>Test de Velocidad</Button>
-                    <div style={{ height: '1px', background: 'var(--color-border)', margin: '8px 0' }}></div>
-                    <Button variant="danger" fullWidth disabled={isSuspended}>Apagar Interfaz</Button>
+                    {alerts.slice(0, 3).map(a => (
+                        <div key={a.id} style={{ padding: '8px', background: 'var(--color-bg-secondary)', borderRadius: '6px', fontSize: '12px', borderLeft: '3px solid var(--color-accent-warning)' }}>
+                            {a.mensaje}
+                        </div>
+                    ))}
+                    {alerts.length === 0 && <span className="text-muted" style={{ fontSize: '12px' }}>Todo en orden.</span>}
                 </div>
             </Card>
 
-            {/* Alertas Activas */}
-            <Card>
-                <h3 className="h3" style={{ marginBottom: '16px' }}>Alertas Activas</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {alerts.length > 0 ? alerts.map(a => (
-                        <div key={a.id} className={`alert-item ${a.estado === 'Alerta Crítica' ? 'alert-critical' : 'alert-warning'}`}>
-                            <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>{a.mensaje}</div>
-                            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>{new Date(a.fecha_detectado).toLocaleString()}</div>
-
-                            {!isSuspended && (
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <button onClick={() => handleAction(a.id, 'en_revision')} style={{ fontSize: '11px', color: 'var(--color-accent-primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Revisar</button>
-                                    <button onClick={() => handleAction(a.id, 'resuelto')} style={{ fontSize: '11px', color: 'var(--color-accent-secondary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Resolver</button>
-                                </div>
-                            )}
-                        </div>
-                    )) : (
-                        <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', textAlign: 'center', padding: '12px' }}>
-                            Sin alertas activas
-                        </div>
-                    )}
+            <Card style={{ marginTop: '24px' }}>
+                <h3 className="h3" style={{ marginBottom: '16px' }}>Detalles Técnicos</h3>
+                <div className="info-grid" style={{ display: 'grid', gap: '12px' }}>
+                    <InfoRow label="Modelo" value={device?.model} />
+                    <InfoRow label="Firmware" value={device?.firmware} />
+                    <InfoRow label="Arquitectura" value="ARM 64bit" />
+                    <InfoRow label="Serial" value="HB88291238" />
                 </div>
             </Card>
 
@@ -397,17 +285,11 @@ export default function DeviceDetailPage() {
   )
 }
 
-function InfoItem({ label, value }) {
+function InfoRow({ label, value }) {
     return (
-        <div className="info-item">
-            <span className="info-label">{label}</span>
-            <span className="info-value">{value}</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+            <span style={{ color: 'var(--color-text-muted)' }}>{label}</span>
+            <span className="font-mono">{value || '-'}</span>
         </div>
     )
-}
-
-function getTempColor(temp) {
-    if (temp < 40) return 'var(--color-accent-secondary)'
-    if (temp < 60) return 'var(--color-accent-warning)'
-    return 'var(--color-accent-danger)'
 }

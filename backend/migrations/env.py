@@ -8,13 +8,9 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 # ---------------------------------------------------------
-# CARGA ROBUSTA DE VARIABLES DE ENTORNO
+# CONFIGURACIÓN DE RUTAS Y ENTORNO
 # ---------------------------------------------------------
-# Intentamos importar la lógica central de rutas.
-# Alembic agrega 'backend/' al sys.path (via prepend_sys_path en alembic.ini),
-# por lo que 'app' debería ser importable directamente.
-
-# Aseguramos que backend y el root del proyecto estén en sys.path
+# Aseguramos que sys.path incluya la raíz del backend y del proyecto
 current_file_path = os.path.abspath(__file__)
 backend_path = os.path.dirname(os.path.dirname(current_file_path))
 root_path = os.path.dirname(backend_path)
@@ -24,20 +20,15 @@ if backend_path not in sys.path:
 if root_path not in sys.path:
     sys.path.append(root_path)
 
+# Intentamos cargar variables de entorno
 try:
-    from app.core.paths import get_env_file
+    from backend.app.core.paths import get_env_file
     dotenv_path = get_env_file()
 except ImportError:
-    # Fallback si falla la importación (ej. ejecutado fuera de contexto estándar)
-    # Calculamos manualmente la ruta a infra/.env
-    # env.py está en backend/migrations/env.py
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    backend_dir = os.path.dirname(current_dir)
-    root_dir = os.path.dirname(backend_dir)
-    dotenv_path = os.path.join(root_dir, "infra", ".env")
+    # Fallback
+    dotenv_path = os.path.join(root_path, "infra", ".env")
     print(f"Aviso: Usando ruta fallback para .env: {dotenv_path}")
 
-# Cargamos variables
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path=dotenv_path)
 else:
@@ -45,23 +36,25 @@ else:
 
 # Validación Crítica de DATABASE_URL
 db_url = os.getenv("DATABASE_URL")
-
 if not db_url:
     print("Error Crítico: No se encontró DATABASE_URL en variables de entorno.")
-    print(f"Ruta de búsqueda .env: {dotenv_path}")
-    print("Asegúrese de que el archivo existe y contiene la variable necesaria.")
     sys.exit(1)
 
 # Config de Alembic
 config = context.config
 
-# Permite logging si alembic.ini define [loggers]
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Importamos db y modelos para permitir autogenerate
-from app.db import db
-from app.models import (
+# ---------------------------------------------------------
+# IMPORTACIÓN DE MODELOS
+# ---------------------------------------------------------
+# Importamos la instancia de db (que contiene metadata)
+# Ajustamos la ruta según lo encontrado en backend/app/db.py
+from backend.app.db import db
+
+# Importamos los modelos para que se registren en metadata
+from backend.app.models import (
     tenant,
     user,
     device,
@@ -71,11 +64,11 @@ from app.models import (
     alert_status_history,
 )
 
+# Asignar Metadata
 target_metadata = db.metadata
 
 # Configurar sqlalchemy.url forzando el valor del entorno
 config.set_main_option("sqlalchemy.url", db_url)
-
 
 def run_migrations_offline():
     """Modo offline: genera SQL usando la URL."""
@@ -89,7 +82,6 @@ def run_migrations_offline():
 
     with context.begin_transaction():
         context.run_migrations()
-
 
 def run_migrations_online():
     """Modo online: conecta y ejecuta migraciones."""
@@ -108,7 +100,6 @@ def run_migrations_online():
 
         with context.begin_transaction():
             context.run_migrations()
-
 
 if context.is_offline_mode():
     run_migrations_offline()

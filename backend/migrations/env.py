@@ -10,27 +10,31 @@ from sqlalchemy import engine_from_config, pool
 # ---------------------------------------------------------
 # CARGA ROBUSTA DE VARIABLES DE ENTORNO
 # ---------------------------------------------------------
-# Calculamos la ruta absoluta al archivo .env (asumiendo que está en backend/)
+# Calculamos la ruta absoluta para encontrar infra/.env
+# env.py está en: backend/migrations/env.py
+# Queremos ir a: infra/.env
 current_dir = os.path.dirname(os.path.abspath(__file__))  # backend/migrations
-backend_dir = os.path.dirname(current_dir)              # backend
-dotenv_path = os.path.join(backend_dir, ".env")
+backend_dir = os.path.dirname(current_dir)                # backend
+root_dir = os.path.dirname(backend_dir)                   # root (un nivel arriba de backend)
+dotenv_path = os.path.join(root_dir, "infra", ".env")
 
-# Carga explícita
-load_dotenv(dotenv_path=dotenv_path)
+# Verificamos si existe el archivo .env, aunque load_dotenv no falla si no existe,
+# es bueno para debugging saber que estamos apuntando bien.
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path=dotenv_path)
+else:
+    # Intento de fallback a root/.env por si acaso (backward compatibility o dev local)
+    fallback_path = os.path.join(root_dir, ".env")
+    if os.path.exists(fallback_path):
+        load_dotenv(dotenv_path=fallback_path)
 
 # Validación Crítica de DATABASE_URL
 db_url = os.getenv("DATABASE_URL")
 
 if not db_url:
-    # Intento de fallback: buscar en root si no está en backend
-    root_dir = os.path.dirname(backend_dir)
-    dotenv_path_root = os.path.join(root_dir, ".env")
-    load_dotenv(dotenv_path=dotenv_path_root)
-    db_url = os.getenv("DATABASE_URL")
-
-if not db_url:
     print("❌ Error: No se encontró DATABASE_URL en .env")
-    print(f"   Ruta buscada: {dotenv_path}")
+    print(f"   Ruta primaria buscada: {dotenv_path}")
+    print("   Asegúrese de que infra/.env existe y contiene DATABASE_URL.")
     sys.exit(1)
 
 # Config de Alembic

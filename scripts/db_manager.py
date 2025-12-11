@@ -15,11 +15,12 @@ import os
 import subprocess
 import argparse
 from typing import List, Tuple
+from pathlib import Path
 
-# Definimos colores para logs si es compatible, o usamos prefijos simples
-INFO_PREFIX = "[INFO] ℹ️ "
-ERROR_PREFIX = "[ERROR] ❌ "
-SUCCESS_PREFIX = "[SUCCESS] ✅ "
+# Prefijos de log (Sin emojis)
+INFO_PREFIX = "[INFO]"
+ERROR_PREFIX = "[ERROR]"
+SUCCESS_PREFIX = "[SUCCESS]"
 
 def log_info(msg):
     print(f"{INFO_PREFIX} {msg}")
@@ -56,58 +57,56 @@ def run_command(command: List[str], cwd: str = None) -> int:
         log_error(f"Error inesperado: {e}")
         return 1
 
-def resolve_paths() -> Tuple[str, str, str]:
+def resolve_paths() -> Tuple[Path, Path, Path]:
     """
-    Detecta las rutas críticas del proyecto de forma robusta.
+    Detecta las rutas críticas del proyecto de forma robusta usando pathlib.
     Retorna: (root_dir, backend_dir, infra_dir)
     """
-    # db_manager.py está en scripts/
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    root_dir = os.path.dirname(current_dir) # scripts/.. -> root
+    # Este script está en scripts/db_manager.py
+    script_path = Path(__file__).resolve()
+    root_dir = script_path.parent.parent # root del repo
 
-    backend_dir = os.path.join(root_dir, "backend")
-    infra_dir = os.path.join(root_dir, "infra")
+    backend_dir = root_dir / "backend"
+    infra_dir = root_dir / "infra"
 
     # Validaciones estructurales
-    if not os.path.isdir(backend_dir):
+    if not backend_dir.is_dir():
         log_error(f"Estructura inválida: No se encontró backend en {backend_dir}")
         sys.exit(1)
 
-    if not os.path.isdir(infra_dir):
+    if not infra_dir.is_dir():
         log_error(f"Estructura inválida: No se encontró infra en {infra_dir}")
         sys.exit(1)
 
     return root_dir, backend_dir, infra_dir
 
-def verify_environment(infra_dir: str):
+def verify_environment(infra_dir: Path):
     """Verifica que exista el archivo .env en infra/."""
-    env_path = os.path.join(infra_dir, ".env")
-    if not os.path.exists(env_path):
+    env_path = infra_dir / ".env"
+    if not env_path.exists():
         log_error(f"No se encontró el archivo de entorno crítico: {env_path}")
         log_info("Por favor cree el archivo infra/.env con las variables necesarias (DATABASE_URL, etc).")
-        # No salimos aquí estrictamente, porque env.py también hace su chequeo, pero es mejor avisar.
-        # El usuario pidió "Debe verificar que infra/.env existe antes de llamar a Alembic."
         sys.exit(1)
     else:
         log_success(f"Archivo de entorno encontrado: {env_path}")
 
-def get_alembic_args(backend_dir: str) -> List[str]:
+def get_alembic_args(backend_dir: Path) -> List[str]:
     """Retorna los argumentos base para alembic incluyendo el config explícito."""
-    ini_path = os.path.join(backend_dir, "alembic.ini")
-    if not os.path.exists(ini_path):
+    ini_path = backend_dir / "alembic.ini"
+    if not ini_path.exists():
         log_error(f"No se encontró alembic.ini en: {ini_path}")
         sys.exit(1)
 
-    return [sys.executable, "-m", "alembic", "-c", ini_path]
+    return [sys.executable, "-m", "alembic", "-c", str(ini_path)]
 
-def check_connection(backend_dir):
+def check_connection(backend_dir: Path):
     """Verifica la conexión a la base de datos (simulada o vía alembic current)."""
     log_info("Verificando conexión y estado actual...")
     # 'alembic current' muestra la revisión actual. Si falla, hay problemas de conexión o config.
     cmd = get_alembic_args(backend_dir) + ["current"]
-    return run_command(cmd, cwd=backend_dir)
+    return run_command(cmd, cwd=str(backend_dir))
 
-def make_migration(message, backend_dir):
+def make_migration(message: str, backend_dir: Path):
     """Crea una nueva revisión de migración."""
     if not message:
         log_error("Debe proporcionar un mensaje para la migración.")
@@ -115,13 +114,13 @@ def make_migration(message, backend_dir):
 
     log_info(f"Creando migración con mensaje: '{message}'")
     cmd = get_alembic_args(backend_dir) + ["revision", "--autogenerate", "-m", message]
-    return run_command(cmd, cwd=backend_dir)
+    return run_command(cmd, cwd=str(backend_dir))
 
-def upgrade_db(backend_dir):
+def upgrade_db(backend_dir: Path):
     """Aplica las migraciones pendientes (upgrade head)."""
     log_info("Aplicando migraciones pendientes...")
     cmd = get_alembic_args(backend_dir) + ["upgrade", "head"]
-    return run_command(cmd, cwd=backend_dir)
+    return run_command(cmd, cwd=str(backend_dir))
 
 def main():
     parser = argparse.ArgumentParser(description="Gestor de Base de Datos Unificado")

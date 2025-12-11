@@ -12,3 +12,33 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    environment:
+      APP_ENV: dev
+      DATABASE_URL: postgresql+psycopg2://mkmonitor:mkmonitor@db:5432/mkmonitor
+      # Otras variables de entorno necesarias pueden ir aquí o en env_file
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    volumes:
+      - ../backend:/app/backend # Montar código para desarrollo (hot-reload si gunicorn lo soportara o usar flask run)
+      # Nota: el Dockerfile copia backend/app a /app/app.
+      # Si montamos ../backend a /app/backend, tendremos /app/backend/app.
+      # Ajustemos el volumen para que coincida con la estructura interna.
+      # El Dockerfile tiene WORKDIR /app. Copia backend/app -> ./app.
+      # Entonces /app/app contiene el código.
+      # Si queremos hot-reload, deberíamos montar ../backend/app:/app/app
+      - ../backend/app:/app/app
+
+volumes:
+  db_data:

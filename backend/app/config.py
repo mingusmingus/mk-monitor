@@ -8,24 +8,25 @@ con IA y parámetros de conexión a dispositivos Mikrotik.
 Soporta carga desde archivo .env para entornos de desarrollo.
 """
 import os
-from datetime import timedelta
 import base64
 from pathlib import Path
+from backend.app.core.paths import INFRA_DIR, get_env_file
 
 # Carga opcional de variables desde .env en desarrollo
 try:
     from dotenv import load_dotenv
-    backend_dir = Path(__file__).resolve().parent.parent
-    project_root = backend_dir.parent
-    env_file = project_root / "infra" / ".env"
+
+    # Usamos la ruta centralizada definida en core/paths.py
+    env_file = get_env_file()
     
     if env_file.exists():
         load_dotenv(env_file, encoding='utf-8')
     else:
+        # Fallback a carga genérica por si las variables están en el sistema
         load_dotenv()
 except Exception as e:
     import warnings
-    warnings.warn(f"No se pudo cargar el archivo .env: {e}", RuntimeWarning)
+    warnings.warn(f"No se pudo cargar el archivo .env desde {INFRA_DIR}: {e}", RuntimeWarning)
 
 class Config:
     """

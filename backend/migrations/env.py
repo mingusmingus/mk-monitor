@@ -14,6 +14,16 @@ from sqlalchemy import engine_from_config, pool
 # Alembic agrega 'backend/' al sys.path (via prepend_sys_path en alembic.ini),
 # por lo que 'app' debería ser importable directamente.
 
+# Aseguramos que backend y el root del proyecto estén en sys.path
+current_file_path = os.path.abspath(__file__)
+backend_path = os.path.dirname(os.path.dirname(current_file_path))
+root_path = os.path.dirname(backend_path)
+
+if backend_path not in sys.path:
+    sys.path.append(backend_path)
+if root_path not in sys.path:
+    sys.path.append(root_path)
+
 try:
     from app.core.paths import get_env_file
     dotenv_path = get_env_file()
@@ -49,8 +59,19 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# No usamos autogenerate (target_metadata=None) en este MVP
-target_metadata = None
+# Importamos db y modelos para permitir autogenerate
+from app.db import db
+from app.models import (
+    tenant,
+    user,
+    device,
+    subscription,
+    alert,
+    log_entry,
+    alert_status_history,
+)
+
+target_metadata = db.metadata
 
 # Configurar sqlalchemy.url forzando el valor del entorno
 config.set_main_option("sqlalchemy.url", db_url)

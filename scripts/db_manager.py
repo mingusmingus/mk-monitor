@@ -14,7 +14,7 @@ import sys
 import os
 import subprocess
 import argparse
-from typing import List
+from typing import List, Tuple
 
 # Definimos colores para logs si es compatible, o usamos prefijos simples
 INFO_PREFIX = "[INFO] ℹ️ "
@@ -36,11 +36,7 @@ def run_command(command: List[str], cwd: str = None) -> int:
     log_info(f"Ejecutando: {cmd_str}")
 
     try:
-        # Usamos shell=False para mayor seguridad, a menos que sea estrictamente necesario
-        # En Windows, si command[0] es un script .cmd o .bat, shell=True puede ser necesario,
-        # pero 'alembic' suele ser un ejecutable en Scripts/ o bin/ del venv.
-        # Para máxima compatibilidad, llamamos a través de 'python -m alembic'
-
+        # Usamos shell=False para mayor seguridad
         result = subprocess.run(
             command,
             cwd=cwd,
@@ -60,29 +56,48 @@ def run_command(command: List[str], cwd: str = None) -> int:
         log_error(f"Error inesperado: {e}")
         return 1
 
-def get_backend_dir():
-    """Retorna la ruta absoluta al directorio backend."""
-    # scripts/db_manager.py -> scripts/ -> root -> backend/
+def resolve_paths() -> Tuple[str, str, str]:
+    """
+    Detecta las rutas críticas del proyecto de forma robusta.
+    Retorna: (root_dir, backend_dir, infra_dir)
+    """
+    # db_manager.py está en scripts/
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    root_dir = os.path.dirname(current_dir)
+    root_dir = os.path.dirname(current_dir) # scripts/.. -> root
+
     backend_dir = os.path.join(root_dir, "backend")
+    infra_dir = os.path.join(root_dir, "infra")
 
+    # Validaciones estructurales
     if not os.path.isdir(backend_dir):
-        log_error(f"No se encontró el directorio backend en: {backend_dir}")
+        log_error(f"Estructura inválida: No se encontró backend en {backend_dir}")
         sys.exit(1)
 
-    # Validar que existe migrations/
-    migrations_dir = os.path.join(backend_dir, "migrations")
-    if not os.path.isdir(migrations_dir):
-        log_error(f"No se encontró el directorio migrations en: {migrations_dir}")
-        log_info("Considere ejecutar: alembic init migrations")
+    if not os.path.isdir(infra_dir):
+        log_error(f"Estructura inválida: No se encontró infra en {infra_dir}")
         sys.exit(1)
 
-    return backend_dir
+    return root_dir, backend_dir, infra_dir
 
-def get_alembic_args(backend_dir) -> List[str]:
+def verify_environment(infra_dir: str):
+    """Verifica que exista el archivo .env en infra/."""
+    env_path = os.path.join(infra_dir, ".env")
+    if not os.path.exists(env_path):
+        log_error(f"No se encontró el archivo de entorno crítico: {env_path}")
+        log_info("Por favor cree el archivo infra/.env con las variables necesarias (DATABASE_URL, etc).")
+        # No salimos aquí estrictamente, porque env.py también hace su chequeo, pero es mejor avisar.
+        # El usuario pidió "Debe verificar que infra/.env existe antes de llamar a Alembic."
+        sys.exit(1)
+    else:
+        log_success(f"Archivo de entorno encontrado: {env_path}")
+
+def get_alembic_args(backend_dir: str) -> List[str]:
     """Retorna los argumentos base para alembic incluyendo el config explícito."""
     ini_path = os.path.join(backend_dir, "alembic.ini")
+    if not os.path.exists(ini_path):
+        log_error(f"No se encontró alembic.ini en: {ini_path}")
+        sys.exit(1)
+
     return [sys.executable, "-m", "alembic", "-c", ini_path]
 
 def check_connection(backend_dir):
@@ -128,9 +143,13 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    backend_dir = get_backend_dir()
+    # 1. Resolver rutas
+    root_dir, backend_dir, infra_dir = resolve_paths()
 
-    # Aseguramos que python-dotenv y alembic estén instalados verificando imports
+    # 2. Verificar entorno
+    verify_environment(infra_dir)
+
+    # 3. Asegurar dependencias
     try:
         import dotenv
         import alembic
@@ -139,6 +158,7 @@ def main():
         log_info("Ejecute: pip install python-dotenv alembic")
         sys.exit(1)
 
+    # 4. Ejecutar comandos
     if args.command == "check":
         sys.exit(check_connection(backend_dir))
     elif args.command == "make":

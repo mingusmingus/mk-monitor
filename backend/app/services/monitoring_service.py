@@ -13,6 +13,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import logging
 import os
+import asyncio
 import time
 
 from ..models.device import Device
@@ -124,7 +125,7 @@ def _safe_parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
                 continue
     return None
 
-def analyze_and_generate_alerts(device: Device) -> None:
+async def analyze_and_generate_alerts(device: Device) -> None:
     """
     Ejecuta el pipeline completo de monitoreo Forense para un dispositivo.
     
@@ -138,9 +139,10 @@ def analyze_and_generate_alerts(device: Device) -> None:
         device (Device): Dispositivo objetivo.
     """
     try:
-        # Paso 1: Minería de Datos
+        # Paso 1: Minería de Datos (Non-blocking I/O)
         miner = DeviceMiner(device)
-        data = miner.mine()
+        # Offload blocking synchronous miner.mine() to a thread
+        data = await asyncio.to_thread(miner.mine)
         
         if "error" in data:
             logging.error(f"[ERROR] monitoring: Error minando datos device_id={device.id}: {data['error']}")
@@ -149,6 +151,8 @@ def analyze_and_generate_alerts(device: Device) -> None:
         now = datetime.utcnow()
         
         # Paso 2: Persistencia de Logs (bulk)
+        # Note: DB operations are still synchronous here as we are using sync SQLAlchemy session.
+        # Ideally, this should also be offloaded or migrated to async session, but prioritizing I/O as requested.
         logs_raw = data.get("logs", [])
 
         # Obtener el último timestamp de log de este device para deduplicar
@@ -196,10 +200,11 @@ def analyze_and_generate_alerts(device: Device) -> None:
             logging.info(f"[INFO] monitoring: persistidos {len(entries)} logs device_id={device.id}")
         
         # Paso 3: Análisis IA
-        analysis_result = analyze_device_context(data)
+        # Await the async analysis
+        analysis_result = await analyze_device_context(data)
         
         # Paso 4: Crear Alerta (Reporte)
-        analysis_text = analysis_result.get("analysis", "")
+        analysis_text = analysis_result.get("technical_analysis") or analysis_result.get("summary")
         recommendations = analysis_result.get("recommendations", [])
         
         if not analysis_text:
@@ -208,11 +213,19 @@ def analyze_and_generate_alerts(device: Device) -> None:
 
         # Determinación de severidad
         severity = "Aviso"
-        lower_analysis = analysis_text.lower()
-        if "critical" in lower_analysis or "failure" in lower_analysis or "attack" in lower_analysis:
+        # Check 'status' first if available
+        status = analysis_result.get("status", "").upper()
+        if status == "CRITICAL":
             severity = "Alerta Severa"
-        if "warning" in lower_analysis or "high" in lower_analysis:
+        elif status == "WARNING":
             severity = "Alerta Menor"
+        else:
+             # Fallback to text analysis
+            lower_analysis = analysis_text.lower()
+            if "critical" in lower_analysis or "failure" in lower_analysis or "attack" in lower_analysis:
+                severity = "Alerta Severa"
+            if "warning" in lower_analysis or "high" in lower_analysis:
+                severity = "Alerta Menor"
         
         # Override por heurística local
         heuristics = data.get("heuristics", [])
@@ -236,11 +249,11 @@ def analyze_and_generate_alerts(device: Device) -> None:
                 tenant_id=device.tenant_id,
                 device_id=device.id,
                 estado=severity,
-                titulo="Reporte Forense IA",
+                titulo=analysis_result.get("summary", "Reporte Forense IA"),
                 descripcion=analysis_text[:512],
                 accion_recomendada=rec_text[:255] or "Ver detalles en dashboard",
                 status_operativo="Pendiente",
-                comentario_ultimo="Generado automáticamente por DeepSeek"
+                comentario_ultimo=f"Generado automáticamente por {Config.AI_PROVIDER.capitalize()}"
             )
             db.session.add(alert)
             logging.info(f"[INFO] monitoring: Alerta Forense creada device_id={device.id}")

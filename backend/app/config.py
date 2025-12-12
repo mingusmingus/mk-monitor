@@ -61,7 +61,12 @@ class Config:
     DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
     DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com/v1/chat/completions")
     DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+
+    # Google Gemini
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
     AI_ANALYSIS_PROVIDER = os.getenv("AI_ANALYSIS_PROVIDER", "auto")
+    AI_PROVIDER = os.getenv("AI_PROVIDER", AI_ANALYSIS_PROVIDER) # Unified provider config
     AI_TIMEOUT_SEC = int(os.getenv("AI_TIMEOUT_SEC", "20"))
     AI_MAX_TOKENS = int(os.getenv("AI_MAX_TOKENS", "800"))
 
@@ -135,3 +140,5 @@ if not is_dev():
             "[WARNING] Config: AI_ANALYSIS_PROVIDER configurado para DeepSeek pero DEEPSEEK_API_KEY ausente. Fallback a heurísticas.",
             RuntimeWarning
         )
+    if getattr(Config, 'AI_PROVIDER', None) == "gemini" and not Config.GEMINI_API_KEY:
+         raise RuntimeError("[ERROR] AI_PROVIDER configured to 'gemini' but GEMINI_API_KEY is missing.")

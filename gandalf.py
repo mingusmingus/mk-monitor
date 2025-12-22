@@ -13,7 +13,7 @@ if BACKEND_DIR not in sys.path:
 # Now we can import from cli
 from cli.ui import GandalfUI
 from cli.session import GandalfSession
-from cli.core import async_ping
+from cli.core import async_ping, async_mine_data
 
 async def main():
     ui = GandalfUI()
@@ -69,8 +69,27 @@ async def main():
                 await asyncio.sleep(1)
 
             elif choice == "2":
-                ui.console.print("\n[yellow][TODO] Implementar en Fase 2: Diagnóstico de Red[/yellow]")
+                target = session.active_target
+                if not target:
+                    ui.console.print("[red]Error: No hay objetivo seleccionado. Use Opción 1 primero.[/red]")
+                    await asyncio.sleep(1)
+                    continue
+
+                ui.console.print(f"\n[cyan]⛏️ Extrayendo evidencia forense del equipo {target.ip}...[/cyan]")
+
+                try:
+                    with ui.console.status(f"[bold green]Conectando a {target.ip}:{target.port}...[/bold green]", spinner="dots"):
+                        # Now passing port correctly to async_mine_data
+                        data = await async_mine_data(target.ip, target.user, target.password, port=target.port)
+
+                    ui.console.print("[green]✓ Extracción completada con éxito.[/green]\n")
+                    ui.show_mined_data(data)
+
+                except Exception as e:
+                    ui.console.print(f"\n[red]Error durante la extracción: {e}[/red]")
+
                 await asyncio.sleep(1.5)
+
             elif choice == "3":
                 ui.console.print("\n[yellow][TODO] Implementar en Fase 2: Invocar IA[/yellow]")
                 await asyncio.sleep(1.5)

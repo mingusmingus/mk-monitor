@@ -1,14 +1,13 @@
-from typing import List
+from typing import List, Generator, Union
+import asyncio
 from rich.console import Console
 from rich.panel import Panel
 from rich.align import Align
 from rich.table import Table
 from rich.text import Text
+from rich.live import Live
 
 # Import GandalfTarget for type hinting
-# Note: In a real circular import scenario we might need TYPE_CHECKING
-# but here GandalfSession imports nothing from ui, so it should be fine.
-# If cli.session is not available yet, we skip or use string forward ref.
 try:
     from cli.session import GandalfTarget
 except ImportError:
@@ -130,3 +129,28 @@ class GandalfUI:
             log_table.add_row(log.get('time'), log.get('topics'), log.get('message'))
 
         self.console.print(log_table)
+
+    async def stream_ai_response(self, text_input: Union[str, Generator]):
+        """
+        Simulates a typewriter effect for the AI response.
+        If text_input is a string, it streams it character by character (or chunk by chunk).
+        """
+        self.console.print("\n[bold cyan]🤖 GANDALF AI:[/bold cyan]")
+
+        message = ""
+        # Create a Live display
+        with Live(Text(message, style="cyan"), console=self.console, refresh_per_second=15) as live:
+            if isinstance(text_input, str):
+                # Simulate streaming for string
+                for char in text_input:
+                    message += char
+                    live.update(Text(message, style="cyan"))
+                    await asyncio.sleep(0.005) # Typewriter speed
+            else:
+                # If it's a generator (not implemented yet in core, but good for future)
+                for chunk in text_input:
+                    message += chunk
+                    live.update(Text(message, style="cyan"))
+                    await asyncio.sleep(0.01)
+
+        self.console.print("\n")

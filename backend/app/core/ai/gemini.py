@@ -16,13 +16,6 @@ class GeminiProvider(BaseAIProvider):
         self.model = Config.GEMINI_MODEL
         self.base_url = "https://generativelanguage.googleapis.com/v1beta"
 
-        # Logic to ensure model starts with models/
-        model_id = self.model
-        if not model_id.startswith("models/"):
-            model_id = f"models/{model_id}"
-
-        self.api_url = f"{self.base_url}/{model_id}:generateContent?key={self.api_key}"
-
     async def analyze(self, context: str, prompt_template: str) -> Dict[str, Any]:
         """
         Analyze the context using Google Gemini API.
@@ -30,6 +23,13 @@ class GeminiProvider(BaseAIProvider):
         if not self.api_key:
             logger.error("Gemini Provider selected but GEMINI_API_KEY is not configured.")
             raise ValueError("Provider not configured: GEMINI_API_KEY missing")
+
+        # Paso 1: Sanitización Agresiva.
+        # Eliminar cualquier prefijo 'models/' que venga en la config para evitar duplicados
+        clean_model = self.model.replace("models/", "")
+
+        # Paso 2: Construcción Manual de URL.
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={self.api_key}"
 
         # Gemini expects a different payload structure
         payload = {
@@ -48,12 +48,17 @@ class GeminiProvider(BaseAIProvider):
             "Content-Type": "application/json"
         }
 
+        # Paso 3: DEBUG LOG.
+        print(f"\n[DEBUG] Consultando URL: {url}")
+        print(f"[DEBUG] Payload parcial: {str(payload)[:50]}...")
+
         logger.info("[Gemini] Payload sent (partial):")
         logger.info(json.dumps({k: v for k, v in payload.items() if k != "contents"}, indent=2))
 
         try:
+            # Paso 4: Petición.
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.api_url, json=payload, headers=headers, timeout=30) as response:
+                async with session.post(url, json=payload, headers=headers, timeout=30) as response:
                     status_code = response.status
                     raw_body = await response.text()
 

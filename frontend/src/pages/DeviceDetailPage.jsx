@@ -33,6 +33,7 @@ export default function DeviceDetailPage() {
   const [fechaFin, setFechaFin] = useState('')
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('overview') // 'overview', 'interfaces', 'neighbors'
+  const [deleting, setDeleting] = useState(false)
 
   const isSuspended = tenantStatus === 'suspendido'
   const [forensicData, setForensicData] = useState(null)
@@ -122,6 +123,22 @@ export default function DeviceDetailPage() {
     }
   }
 
+  const handleDelete = async () => {
+      if (!window.confirm("¿Estás seguro de que deseas eliminar este equipo? Esta acción moverá el equipo a la papelera y dejará de ser monitoreado.")) {
+          return
+      }
+
+      setDeleting(true)
+      try {
+          await client.delete(`/devices/${deviceId}`)
+          navigate('/devices')
+      } catch (e) {
+          console.error("Error deleting device", e)
+          alert("Hubo un error al eliminar el dispositivo.")
+          setDeleting(false)
+      }
+  }
+
   const handleAction = async (alertId, newStatus) => {
     if (isSuspended) return
     await updateAlertStatus(alertId, { status_operativo: newStatus })
@@ -165,6 +182,9 @@ export default function DeviceDetailPage() {
             </div>
 
             <div style={{ display: 'flex', gap: '12px' }}>
+                <Button variant="danger" disabled={isSuspended || deleting} loading={deleting} onClick={handleDelete}>
+                    Eliminar
+                </Button>
                 <Button variant="ghost" disabled={isSuspended}>Reiniciar</Button>
                 <Button variant="primary" disabled={isSuspended}>Configuración</Button>
             </div>

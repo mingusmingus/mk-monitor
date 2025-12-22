@@ -2,8 +2,15 @@
 import sys
 import os
 import asyncio
-import getpass
 from aioconsole import ainput
+
+# Check initial requirements
+try:
+    import aiohttp
+except ImportError:
+    print("\n\033[1;31m[ERROR CRÍTICO]\033[0m La librería 'aiohttp' no está instalada.")
+    print("Por favor, instale las dependencias con: pip install -r backend/requirements.txt\n")
+    sys.exit(1)
 
 # Import Hack: Add backend to sys.path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -14,20 +21,21 @@ if BACKEND_DIR not in sys.path:
 # Now we can import from cli
 from cli.ui import GandalfUI
 from cli.session import GandalfSession
-from cli.core import async_ping, async_mine_data, GandalfBrain, save_key_to_env
-
-async def ainput_password(prompt: str) -> str:
-    """Async wrapper for getpass to read password securely."""
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, getpass.getpass, prompt)
+from cli.core import async_ping, async_mine_data, GandalfBrain, save_key_to_env, load_or_create_env
+from backend.app.config import Config
 
 async def main():
     ui = GandalfUI()
     session = GandalfSession()
     brain = GandalfBrain()
 
-    # Default provider
-    current_provider = "deepseek"
+    # Load provider from Config/Env
+    current_provider = Config.AI_ANALYSIS_PROVIDER if Config.AI_ANALYSIS_PROVIDER != 'auto' else 'deepseek'
+
+    # If Config says "auto" but we want to know what it resolved to, we might check keys
+    # But for now, let's default to what's in env or deepseek
+    if not current_provider:
+        current_provider = "deepseek"
 
     ui.show_banner()
     await asyncio.sleep(1)
@@ -111,120 +119,139 @@ async def main():
                     await asyncio.sleep(3)
 
             elif choice == "3":
-                # AI Sub-menu
-                while True:
-                    # Refresh key status in loop
-                    has_key = brain.check_key(current_provider)
+                # Ensure we have a target and data
+                target = session.active_target
+                if not target:
+                    ui.console.print("[red]Error: No hay objetivo seleccionado. Use Opción 1 del menú principal.[/red]")
+                    await asyncio.sleep(2)
+                    continue
 
-                    ui.console.clear()
-                    ui.show_banner()
-                    ui.print_dashboard(session.active_target, current_provider, has_key)
+                # Check Key
+                if not has_key:
+                     ui.console.print(f"[yellow]⚠️ No se detectó API Key para {current_provider}.[/yellow]")
+                     ui.console.print("Por favor, use la opción 5 para configurar su API Key.")
+                     await asyncio.sleep(2)
+                     continue
 
-                    ui.console.print(f"\n[bold cyan]🧠 Inteligencia Artificial ({current_provider})[/bold cyan]")
-                    ui.console.print("1. Auditoría Automática")
-                    ui.console.print("2. Consulta Libre")
-                    ui.console.print("3. Cambiar Proveedor")
-                    ui.console.print("4. Configurar/Guardar API Key")
-                    ui.console.print("5. Volver al menú principal")
-
-                    sub_choice = await ainput("\nIA > ")
-                    sub_choice = sub_choice.strip()
-
-                    if sub_choice == "5":
-                        break
-
-                    if sub_choice == "3":
-                        ui.console.print("[yellow]Proveedores disponibles: deepseek, gemini[/yellow]")
-                        new_prov = await ainput("Nombre del proveedor: ")
-                        new_prov = new_prov.strip().lower()
-                        if new_prov in ["deepseek", "gemini"]:
-                            current_provider = new_prov
-                            ui.console.print(f"[green]Proveedor cambiado a {current_provider}[/green]")
-                        else:
-                            ui.console.print("[red]Proveedor no válido[/red]")
-                        await asyncio.sleep(1)
-                        continue
-
-                    if sub_choice == "4":
-                        ui.console.print(f"[cyan]Configurando API Key para: {current_provider}[/cyan]")
-                        key = await ainput_password(f"Ingrese API Key para {current_provider}: ")
-                        key = key.strip()
-                        if key:
-                            key_var = "DEEPSEEK_API_KEY" if current_provider == "deepseek" else "GEMINI_API_KEY"
-                            save_key_to_env(key_var, key)
-                            ui.console.print("[green]API Key guardada correctamente en .env y cargada en sesión.[/green]")
-                        else:
-                            ui.console.print("[red]Operación cancelada (clave vacía).[/red]")
-                        await asyncio.sleep(1.5)
-                        continue
-
-                    # Ensure we have a target and data (for 1 and 2)
-                    target = session.active_target
-                    if not target:
-                        ui.console.print("[red]Error: No hay objetivo seleccionado. Use Opción 1 del menú principal.[/red]")
-                        await asyncio.sleep(2)
-                        break # Go back to main menu
-
-                    # Ensure API Key
-                    if not has_key:
-                        ui.console.print(f"[yellow]⚠️ No se detectó API Key para {current_provider}.[/yellow]")
-                        ui.console.print("Por favor, use la opción 4 para configurar su API Key.")
-                        await asyncio.sleep(2)
-                        continue
-
-                    # Ensure Data
-                    data = session.last_mined_data
-                    if not data:
-                        ui.console.print("[yellow]Datos no disponibles en caché. Iniciando minería automática...[/yellow]")
-                        try:
-                            with ui.console.status(f"[bold green]Conectando a {target.ip}...[/bold green]", spinner="dots"):
-                                data = await async_mine_data(target.ip, target.user, target.password, port=target.port)
-                                session.set_last_mined_data(data)
-                        except Exception as e:
-                            ui.console.print(f"[red]Falló la minería de datos: {e}[/red]")
-                            await asyncio.sleep(2)
-                            continue
-
-                    # Prepare Prompt
-                    prompt = ""
-                    if sub_choice == "1":
-                        prompt = "Realiza una auditoría de seguridad completa basada en los logs, recursos y direcciones IP proporcionados. Identifica vulnerabilidades críticas."
-                        ui.console.print("[cyan]Iniciando Auditoría Automática...[/cyan]")
-                    elif sub_choice == "2":
-                        prompt = await ainput("Escriba su consulta a la IA: ")
-                        if not prompt.strip():
-                            continue
-                    else:
-                        continue
-
-                    # Send to AI
+                # Ensure Data
+                data = session.last_mined_data
+                if not data:
+                    ui.console.print("[yellow]Datos no disponibles en caché. Iniciando minería automática...[/yellow]")
                     try:
-                        with ui.console.status("[bold cyan]Consultando al Oráculo...[/bold cyan]", spinner="earth"):
-                            response = await brain.ask(data, prompt, provider=current_provider)
+                        with ui.console.status(f"[bold green]Conectando a {target.ip}...[/bold green]", spinner="dots"):
+                            data = await async_mine_data(target.ip, target.user, target.password, port=target.port)
+                            session.set_last_mined_data(data)
+                    except Exception as e:
+                        ui.console.print(f"[red]Falló la minería de datos: {e}[/red]")
+                        await asyncio.sleep(2)
+                        continue
 
-                        # Handle Response
-                        if response.get("status") == "WARNING" and "unavailable" in response.get("summary", "").lower():
-                             ui.console.print(f"[red]Error de la IA: {response.get('technical_analysis')}[/red]")
-                        else:
-                            # We prefer 'technical_analysis' for the main body
-                            answer = response.get("technical_analysis", "")
-                            if not answer:
-                                answer = str(response) # Fallback
+                # AI Sub-menu
+                ui.console.print(f"\n[bold cyan]🧠 Inteligencia Artificial ({current_provider})[/bold cyan]")
+                ui.console.print("1. Auditoría Automática")
+                ui.console.print("2. Consulta Libre")
+                ui.console.print("3. Volver")
 
-                            await ui.stream_ai_response(answer)
+                sub_choice = await ainput("\nIA > ")
+                sub_choice = sub_choice.strip()
 
-                            # Also show summary if present and distinct
-                            summary = response.get("summary")
-                            if summary and summary not in answer:
-                                ui.console.print(f"[bold]Resumen:[/bold] {summary}")
+                if sub_choice == "3":
+                    continue
 
+                # Prepare Prompt
+                prompt = ""
+                if sub_choice == "1":
+                    prompt = "Realiza una auditoría de seguridad completa basada en los logs, recursos y direcciones IP proporcionados. Identifica vulnerabilidades críticas."
+                    ui.console.print("[cyan]Iniciando Auditoría Automática...[/cyan]")
+                elif sub_choice == "2":
+                    prompt = await ainput("Escriba su consulta a la IA: ")
+                    if not prompt.strip():
+                        continue
+                else:
+                    continue
+
+                # Send to AI
+                try:
+                    with ui.console.status("[bold cyan]Consultando al Oráculo...[/bold cyan]", spinner="earth"):
+                        response = await brain.ask(data, prompt, provider=current_provider)
+
+                    # Handle Response
+                    if response.get("status") == "WARNING" and "unavailable" in response.get("summary", "").lower():
+                            ui.console.print(f"[red]Error de la IA: {response.get('technical_analysis')}[/red]")
+                    else:
+                        # We prefer 'technical_analysis' for the main body
+                        answer = response.get("technical_analysis", "")
+                        if not answer:
+                            answer = str(response) # Fallback
+
+                        await ui.stream_ai_response(answer)
+
+                        # Also show summary if present and distinct
+                        summary = response.get("summary")
+                        if summary and summary not in answer:
+                            ui.console.print(f"[bold]Resumen:[/bold] {summary}")
+
+                    await ainput("\n[Presione Enter para continuar]")
+
+                except Exception as e:
+                        ui.console.print(f"[red]Error crítico comunicando con la IA: {e}[/red]")
                         await ainput("\n[Presione Enter para continuar]")
 
-                    except Exception as e:
-                         ui.console.print(f"[red]Error crítico comunicando con la IA: {e}[/red]")
-                         await ainput("\n[Presione Enter para continuar]")
-
             elif choice == "4":
+                # Change Platform AI Engine
+                ui.console.print(f"\n[bold yellow]Cambiar Motor de IA de la Plataforma[/bold yellow]")
+                ui.console.print(f"Proveedor Actual: [bold]{current_provider}[/bold]")
+                ui.console.print("Opciones disponibles: deepseek, gemini")
+
+                new_prov = await ainput("Nuevo proveedor: ")
+                new_prov = new_prov.strip().lower()
+
+                if new_prov in ["deepseek", "gemini"]:
+                    # Save to .env (AI_ANALYSIS_PROVIDER)
+                    save_key_to_env("AI_ANALYSIS_PROVIDER", new_prov)
+                    current_provider = new_prov
+
+                    # Also update AI_PROVIDER just in case
+                    save_key_to_env("AI_PROVIDER", new_prov)
+
+                    ui.console.print(f"[green]✓ Proveedor actualizado a: {current_provider} (Guardado en .env)[/green]")
+                else:
+                    ui.console.print("[red]Proveedor inválido.[/red]")
+
+                await asyncio.sleep(2)
+
+            elif choice == "5":
+                # Manage API Keys
+                ui.console.print("\n[bold yellow]Gestión de API Keys[/bold yellow]")
+                ui.console.print("1. DeepSeek API Key")
+                ui.console.print("2. Google Gemini API Key")
+                ui.console.print("3. Volver")
+
+                k_choice = await ainput("\nOpción > ")
+                key_var = ""
+
+                if k_choice == "1":
+                    key_var = "DEEPSEEK_API_KEY"
+                elif k_choice == "2":
+                    key_var = "GEMINI_API_KEY"
+                elif k_choice == "3":
+                    continue
+                else:
+                    continue
+
+                ui.console.print(f"Ingrese la nueva Key para {key_var}")
+                new_key = await ainput("Key (Click derecho para pegar): ")
+                new_key = new_key.strip()
+
+                if new_key:
+                    save_key_to_env(key_var, new_key)
+                    ui.console.print(f"[green]✓ {key_var} actualizada y guardada en .env[/green]")
+                else:
+                    ui.console.print("[yellow]Operación cancelada (Key vacía)[/yellow]")
+
+                await asyncio.sleep(1.5)
+
+            elif choice == "6":
                 ui.console.print("\n[bold cyan]¡Corred, insensatos![/bold cyan]")
                 break
             else:

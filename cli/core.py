@@ -4,6 +4,7 @@ import os
 import asyncio
 import platform
 import json
+from pathlib import Path
 from typing import Dict, Any, List
 
 # Try importing routeros_api
@@ -21,63 +22,77 @@ def init_system_paths(backend_path: str = None):
     if backend_path and backend_path not in sys.path:
         sys.path.append(backend_path)
 
+def load_or_create_env() -> str:
+    """
+    Locates the root .env file.
+    Returns the path to the .env file.
+    """
+    # cli/core.py -> cli/ -> root/
+    current_dir = Path(__file__).resolve().parent
+    root_dir = current_dir.parent
+    return str(root_dir / '.env')
+
 def save_key_to_env(key_name: str, key_value: str):
     """
-    Saves the API Key to the .env file in infra/ and updates the current environment.
+    Saves the API Key to the .env file (EXCLUSIVELY in ROOT)
+    and updates the current environment. Includes newline safety check.
     """
-    # Attempt to locate .env file via backend utils if available, or relative path
-    try:
-        from backend.app.core.paths import get_env_file
-        env_path = get_env_file()
-    except ImportError:
-        # Fallback logic if imports fail (unlikely given sys.path setup)
-        # Assuming we are running from root or finding it relatively
-        # Current file is cli/core.py. Root is ../
-        cli_dir = os.path.dirname(os.path.abspath(__file__))
-        root_dir = os.path.dirname(cli_dir)
-        env_path = os.path.join(root_dir, 'infra', '.env')
+    # 1. Aggressive Strip
+    key_value = key_value.strip()
 
-    # Update current session
+    # 2. Determine Path (Root .env)
+    target_env = load_or_create_env()
+
+    # 3. Update Runtime Session
     os.environ[key_name] = key_value
 
-    # Update Config if available
+    # Update Config class if available (for current execution)
     try:
         from backend.app.config import Config
         setattr(Config, key_name, key_value)
     except ImportError:
         pass
 
-    # Update or Append to .env file
-    # If env_path is a Path object, convert to str for consistency if needed, though open() handles Path.
-    if hasattr(env_path, 'parent'):
-        if not os.path.exists(env_path.parent):
-            try:
-                os.makedirs(env_path.parent)
-            except OSError:
-                pass
+    # 4. Smart Write to File
+    # Ensure directory exists
+    target_path = Path(target_env)
+    if not target_path.parent.exists():
+        target_path.parent.mkdir(parents=True, exist_ok=True)
 
     lines = []
-    key_found = False
-
-    if os.path.exists(env_path):
-        with open(env_path, 'r') as f:
-            lines = f.readlines()
+    if target_path.exists():
+        try:
+            with open(target_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        except UnicodeDecodeError:
+             with open(target_path, 'r') as f: # Fallback
+                lines = f.readlines()
 
     new_lines = []
+    key_found = False
+
     for line in lines:
-        if line.startswith(f"{key_name}="):
+        # Check if line starts with KEY= (ignoring whitespace)
+        if line.strip().startswith(f"{key_name}="):
             new_lines.append(f"{key_name}={key_value}\n")
             key_found = True
         else:
             new_lines.append(line)
 
     if not key_found:
-        if new_lines and not new_lines[-1].endswith('\n'):
-            new_lines[-1] += '\n'
+        # Logic to prevent appending to a line without \n
+        if new_lines:
+            last_line = new_lines[-1]
+            if not last_line.endswith('\n'):
+                new_lines[-1] = last_line + '\n'
+
         new_lines.append(f"{key_name}={key_value}\n")
 
-    with open(env_path, 'w') as f:
-        f.writelines(new_lines)
+    try:
+        with open(target_path, 'w', encoding='utf-8') as f:
+            f.writelines(new_lines)
+    except Exception as e:
+        print(f"Error saving .env: {e}")
 
 async def async_ping(ip: str) -> bool:
     """
@@ -212,9 +227,21 @@ class GandalfBrain:
         Queries the AI provider.
         """
         from backend.app.core.ai.factory import AIFactory
+        from backend.app.config import Config
 
-        # Force provider selection via env var which Factory reads
+        # Use configuration provider if set to specific engine, or override with argument
+        # Ideally, respect what's passed, or what's in env
+        # The instruction implies user can change provider
+
+        # We ensure env var is set so Factory picks it up if it reads os.environ directly
+        # or we rely on config reloading.
+        # But AIFactory logic might rely on Config.AI_PROVIDER
+
+        # Let's ensure the passed provider is used
         os.environ["AI_PROVIDER"] = provider
+
+        # Also update Config to be safe if Factory reads Config
+        Config.AI_PROVIDER = provider
 
         ai_provider = AIFactory.get_ai_provider()
 

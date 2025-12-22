@@ -1,0 +1,24 @@
+# Auditoría del Proyecto MK-Monitor
+
+[CRÍTICO]
+- **Falta de Gestión de Ciclo de Vida Completo (Usuarios/Tenants):** El sistema permite crear usuarios y tenants (registro) pero no eliminarlos ni desactivarlos. Esto es una violación de GDPR y gestión básica de datos.
+- **Alertas Huérfanas:** Al realizar un "Soft Delete" de un equipo, sus alertas activas permanecen en estado "abierto", ensuciando el Dashboard y generando ruido operativo.
+- **Validación de Roles Insuficiente:** Aunque existen decoradores `@require_auth(role='admin')`, la granularidad es baja. Un usuario 'noc' podría tener acceso a información sensible si no se auditan todos los endpoints.
+- **Riesgo de Inyección en Exportaciones:** La exportación a CSV en `log_routes.py` tiene mitigaciones básicas pero requiere una revisión de seguridad más profunda para evitar inyecciones de fórmulas.
+
+[UX/UI]
+- **Feedback de Eliminación Ausente:** Tras eliminar un equipo, la redirección es inmediata sin confirmación visual (Toast/Notificación) de éxito, dejando al usuario con incertidumbre.
+- **Navegación Confusa:** Ausencia de "Breadcrumbs" (Migas de pan). El usuario pierde contexto al navegar entre Dashboard > Lista > Detalle.
+- **Problemas de Contraste en Modo Oscuro:** Los logs mostrados en la tarjeta de detalles tienen bajo contraste (texto gris sobre fondo oscuro), dificultando la lectura en condiciones de baja luz.
+- **Estados de Carga (Skeletons):** Al cambiar entre pestañas (Interfaces, Vecinos), el contenido salta o aparece vacío momentáneamente. Faltan skeletons para una transición suave.
+
+[FEATURE]
+- **Papelera de Reciclaje:** Implementar una vista para gestionar equipos eliminados (Soft Deleted), permitiendo su restauración en caso de error humano.
+- **Acciones Masivas (Bulk Actions):** Permitir seleccionar múltiples dispositivos en `DevicesPage` para reiniciarlos o eliminarlos en lote.
+- **Retención de Logs Configurable:** Permitir a cada Tenant definir por cuánto tiempo guardar logs (ej. 30 días) para gestionar su cuota de almacenamiento.
+
+[REFACTOR]
+- **Consultas N+1 en Listados:** El endpoint `GET /devices` itera sobre cada dispositivo para calcular su salud individualmente, lo cual degradará el rendimiento con muchos equipos. Debe optimizarse a nivel SQL.
+- **Controladores Monolíticos:** `auth_routes.py` y `device_routes.py` contienen demasiada lógica de negocio mezclada con la capa HTTP. Se debe extraer a servicios (`auth_service.py`).
+- **Cadenas de Texto "Hardcoded":** Mensajes de error y etiquetas de UI están dispersos en el código. Se recomienda centralizarlos en archivos de constantes o diccionarios de traducción (i18n).
+- **Manejo de Errores Frontend:** `DeviceDetailPage.jsx` maneja errores de forma básica (`console.error`). Se debe implementar un sistema global de manejo de errores (ErrorBoundary) y notificaciones al usuario.

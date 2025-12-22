@@ -88,14 +88,8 @@ def delete_device(device_id):
     if not device:
         return jsonify({"message": "Dispositivo no encontrado"}), 404
 
-    # Soft delete if column exists, otherwise hard delete or fallback
-    if hasattr(device, 'is_active'):
-        device.is_active = False
-    else:
-        # If schema isn't updated, we can't really soft delete easily without adding column.
-        # But for this task, we assume the model is updated.
-        device.is_active = False
-
+    # Soft delete
+    device.is_active = False
     db.session.commit()
 
     return jsonify({"message": "Dispositivo eliminado correctamente"}), 200

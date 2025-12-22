@@ -1,0 +1,46 @@
+=== REPORTE DE SALUD DEL REPOSITORIO ===
+
+[CRÍTICO] CONFIGURACIÓN Y SECRETOS
+
+Archivo: infra/.env.example -> MOVER a raíz (renombrar a .env.example)
+Alerta: El proyecto actualmente depende de infra/.env (referenciado en scripts/db_manager.py, cli/core.py, docs). Se debe migrar a .env en raíz.
+
+Archivo: infra/.env.local.example -> FUSIONAR con .env.example o BORRAR
+Alerta: Redundante. Si se centraliza la configuración, un solo archivo de ejemplo en la raíz es suficiente.
+
+Archivo: backend/init_db.py -> BORRAR
+Alerta: Script manual con credenciales hardcodeadas (os.environ). Inseguro y redundante frente a Alembic y variables de entorno.
+
+[LIMPIEZA] ARCHIVOS BASURA / TEMPORALES
+
+estructura.txt (Razón: Archivo binario/grande innecesario, posible dump corrupto del árbol de directorios)
+frontend_verify.png (Razón: Captura de pantalla/artefacto visual temporal)
+backend/fix_db.py (Razón: Script de reparación ad-hoc para una migración específica que ya debería estar resuelta)
+backend/Makefile (Razón: Duplicado de Makefile en raíz; el de raíz maneja mejor las rutas con -c backend/alembic.ini)
+backend/requirements-dev.txt (Razón: Redundante y desactualizado vs requirements-dev.txt en raíz)
+
+[ESTRUCTURA] CARPETA INFRA/
+
+Archivos válidos:
+- docker-compose.yml
+- nginx-frontend.conf
+- README.md
+
+Archivos sospechosos:
+- .env.example -> Mover a raíz
+- .env.local.example -> Borrar/Fusionar
+
+PLAN DE EJECUCIÓN SUGERIDO
+
+1. Centralizar Configuración:
+   cp infra/.env.example .env.example
+   # (Revisión manual requerida: fusionar contenido de infra/.env.local.example si aplica)
+   # Nota: Los scripts deben actualizarse para leer .env desde la raíz.
+
+2. Eliminar Archivos Basura:
+   rm estructura.txt frontend_verify.png backend/init_db.py backend/fix_db.py backend/Makefile backend/requirements-dev.txt infra/.env.local.example
+
+3. Migración y Limpieza Final:
+   # Mover infra/.env.example en vez de copiar si se desea eliminar de infra
+   mv infra/.env.example .env.example
+   # Actualizar referencias en código (db_manager.py, cli/core.py) para apuntar a root/.env

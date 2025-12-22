@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 @dataclass
 class GandalfTarget:
@@ -16,6 +16,7 @@ class GandalfSession:
     def __init__(self):
         self.context = {}
         self.targets: List[GandalfTarget] = []
+        self.last_mined_data: Optional[Dict] = None
 
     def update_context(self, key, value):
         self.context[key] = value
@@ -32,6 +33,9 @@ class GandalfSession:
             is_alive=is_alive
         )
         self.targets.append(target)
+
+    def set_last_mined_data(self, data: Dict):
+        self.last_mined_data = data
 
     @property
     def active_target(self) -> Optional[GandalfTarget]:

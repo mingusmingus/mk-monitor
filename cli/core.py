@@ -3,6 +3,7 @@ import sys
 import os
 import asyncio
 import platform
+import json
 from typing import Dict, Any, List
 
 # Try importing routeros_api
@@ -124,3 +125,66 @@ def mine_data_sync(ip, user, password, port=8728) -> Dict[str, Any]:
 async def async_mine_data(ip, user, password, port=8728) -> Dict[str, Any]:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, mine_data_sync, ip, user, password, port)
+
+
+class GandalfBrain:
+    def __init__(self):
+        # We rely on lazy import in methods or updated env vars
+        pass
+
+    def check_key(self, provider="deepseek") -> bool:
+        """Checks if the API key for the provider is available."""
+        try:
+            from app.config import Config
+            if provider == "deepseek":
+                return bool(os.getenv("DEEPSEEK_API_KEY") or Config.DEEPSEEK_API_KEY)
+            elif provider == "gemini":
+                 return bool(os.getenv("GEMINI_API_KEY") or getattr(Config, 'GEMINI_API_KEY', None))
+        except ImportError:
+            # Fallback if Config not loaded yet
+            pass
+
+        key_var = "DEEPSEEK_API_KEY" if provider == "deepseek" else "GEMINI_API_KEY"
+        return key_var in os.environ
+
+    def setup_key(self, provider: str, key: str):
+        """Injects the API key into environment and Config."""
+        key_var = "DEEPSEEK_API_KEY" if provider == "deepseek" else "GEMINI_API_KEY"
+        os.environ[key_var] = key
+
+        # Update Config dynamically so new instances pick it up
+        try:
+            from app.config import Config
+            setattr(Config, key_var, key)
+        except ImportError:
+            pass
+
+    async def ask(self, context: dict, prompt: str, provider="deepseek") -> Dict[str, Any]:
+        """
+        Queries the AI provider.
+        """
+        # Ensure imports work (backend must be in sys.path)
+        from app.core.ai.factory import AIFactory
+
+        # Force provider selection via env var which Factory reads
+        os.environ["AI_PROVIDER"] = provider
+
+        ai_provider = AIFactory.get_ai_provider()
+
+        # Convert context to string
+        context_str = json.dumps(context, indent=2, default=str)
+
+        # Construct system prompt to ensure JSON output and handle user question
+        # DeepSeekProvider enforces JSON object response format.
+        # We guide the model to put the text answer in 'technical_analysis'.
+        full_system_prompt = (
+            f"{prompt}\n\n"
+            "INSTRUCTIONS:\n"
+            "You are a Mikrotik Certified Control Engineer (MTCINE).\n"
+            "Analyze the provided forensic data context.\n"
+            "Provide your response in a JSON object with at least these keys: 'status', 'summary', 'technical_analysis'.\n"
+            "If this is a free query, put the answer in 'technical_analysis'."
+        )
+
+        response = await ai_provider.analyze(context_str, full_system_prompt)
+        return response

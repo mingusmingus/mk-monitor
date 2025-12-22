@@ -13,10 +13,11 @@ if BACKEND_DIR not in sys.path:
 # Now we can import from cli
 from cli.ui import GandalfUI
 from cli.session import GandalfSession
+from cli.core import async_ping
 
 async def main():
     ui = GandalfUI()
-    session = GandalfSession() # Intentionally unused in this phase, just initializing
+    session = GandalfSession()
 
     ui.show_banner()
 
@@ -28,8 +29,45 @@ async def main():
             choice = choice.strip()
 
             if choice == "1":
-                ui.console.print("\n[yellow][TODO] Implementar en Fase 2: Gestionar Objetivos[/yellow]")
-                await asyncio.sleep(1.5)
+                ui.console.print("\n[bold cyan]Nuevo Objetivo[/bold cyan]")
+
+                # Get IP
+                ip = await ainput("IP Address: ")
+                ip = ip.strip()
+                if not ip:
+                    ui.console.print("[red]IP no puede estar vacía.[/red]")
+                    continue
+
+                # Get User
+                user = await ainput("User: ")
+                user = user.strip()
+                if not user:
+                    ui.console.print("[red]Usuario no puede estar vacío.[/red]")
+                    continue
+
+                # Get Password
+                password = await ainput("Password: ")
+                # Password can be empty sometimes, so we allow it but strip it
+                password = password.strip()
+
+                # Verify Network Reachability
+                with ui.console.status("[bold green]🔍 Verificando alcance de red...[/bold green]", spinner="dots"):
+                    is_reachable = await async_ping(ip)
+
+                if is_reachable:
+                    ui.console.print(f"[green]✓ Host {ip} es alcanzable.[/green]")
+                else:
+                    ui.console.print(f"[red]✗ Host {ip} no responde al ping.[/red]")
+
+                # Add to session
+                session.add_target(ip, user, password, is_alive=is_reachable)
+
+                # Show Targets Table
+                ui.console.print("\n") # Spacing
+                ui.print_targets_table(session.targets)
+
+                await asyncio.sleep(1)
+
             elif choice == "2":
                 ui.console.print("\n[yellow][TODO] Implementar en Fase 2: Diagnóstico de Red[/yellow]")
                 await asyncio.sleep(1.5)
@@ -47,6 +85,8 @@ async def main():
             break
         except Exception as e:
             ui.console.print(f"\n[red]Error inesperado: {e}[/red]")
+            import traceback
+            traceback.print_exc()
             await asyncio.sleep(2)
 
 if __name__ == "__main__":

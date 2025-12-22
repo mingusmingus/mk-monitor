@@ -27,6 +27,7 @@ class Device(db.Model):
         location (str): Ubicación física o lógica del dispositivo.
         wan_type (str): Tipo de conexión WAN.
         created_at (datetime): Fecha de registro del dispositivo.
+        is_active (bool): Indica si el dispositivo está activo (Soft Delete).
     """
     __tablename__ = "devices"
 
@@ -41,6 +42,7 @@ class Device(db.Model):
     location = db.Column(db.String(120), nullable=True)
     wan_type = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=func.now())
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
 
     # Relaciones
     alerts = db.relationship("Alert", backref="device", lazy=True)

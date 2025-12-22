@@ -100,9 +100,9 @@ def decrypt_secret(ciphertext: str) -> str:
 
 def list_devices_for_tenant(tenant_id: int) -> List[Device]:
     """
-    Lista todos los dispositivos asociados a un tenant.
+    Lista todos los dispositivos activos asociados a un tenant.
     """
-    return Device.query.filter_by(tenant_id=tenant_id).all()
+    return Device.query.filter_by(tenant_id=tenant_id, is_active=True).all()
 
 def create_device(tenant_id: int, payload: Dict[str, Any]) -> Device:
     """
@@ -146,6 +146,7 @@ def create_device(tenant_id: int, payload: Dict[str, Any]) -> Device:
         firmware_version=payload.get("firmware_version"),
         location=payload.get("location"),
         wan_type=payload.get("wan_type"),
+        is_active=True # Explicit default
     )
     db.session.add(device)
     db.session.commit()

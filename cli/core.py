@@ -94,6 +94,41 @@ def save_key_to_env(key_name: str, key_value: str):
     except Exception as e:
         print(f"Error saving .env: {e}")
 
+def check_auth(ip, user, password, port=8728) -> bool:
+    """
+    Synchronously attempts to login to the device.
+    Uses /system/identity as Proof of Life.
+    Returns True if successful, raises exception or returns False otherwise.
+    """
+    if not ROUTEROS_AVAILABLE:
+        raise ImportError("routeros_api library is not installed.")
+
+    connection = None
+    try:
+        # Removed socket_timeout=5 to prevent crash
+        connection = routeros_api.RouterOsApiPool(
+            ip,
+            username=user,
+            password=password,
+            port=int(port),
+            plaintext_login=True,
+            use_ssl=False
+        )
+        api = connection.get_api()
+        # Proof of life
+        identity = api.get_resource('/system/identity').get()
+        return True
+    except Exception as e:
+        # Could differentiate between timeout vs auth error if needed
+        # but for now, any error means auth/connection failure
+        # Raise to provide context if needed, or return False.
+        # Requirement: "Si falla el login, debe lanzar excepción o retornar False."
+        # I will raise exception to be handled by caller for better error message
+        raise ConnectionError(f"Auth failed or unreachable: {e}")
+    finally:
+        if connection:
+            connection.disconnect()
+
 async def async_ping(ip: str) -> bool:
     """
     Asynchronously pings a host to check if it's reachable.
@@ -115,6 +150,26 @@ async def async_ping(ip: str) -> bool:
         return return_code == 0
     except Exception:
         return False
+
+async def async_verify_connection(ip: str, user: str, passw: str, port: int = 8728) -> bool:
+    """
+    Wrapper that performs Ping AND Auth Check.
+    """
+    # 1. Ping
+    is_up = await async_ping(ip)
+    if not is_up:
+        print(f"Ping failed for {ip}") # Optional logging
+        return False
+
+    # 2. Check Auth (blocking, run in executor)
+    loop = asyncio.get_running_loop()
+    try:
+        await loop.run_in_executor(None, check_auth, ip, user, passw, port)
+        return True
+    except Exception as e:
+        print(f"Auth check failed for {ip}: {e}")
+        return False
+
 
 class SimpleMiner:
     def __init__(self, ip, user, password, port=8728):
@@ -149,7 +204,15 @@ class SimpleMiner:
         try:
             self.connect()
 
-            # /system/resource/print
+            # 1. /system/identity/print (Proof of Life / Identity)
+            try:
+                identity = self.api.get_resource('/system/identity').get()
+                if identity:
+                    data['identity'] = identity[0]
+            except Exception as e:
+                data['identity'] = {'error': str(e)}
+
+            # 2. /system/resource/print
             try:
                 resources = self.api.get_resource('/system/resource').get()
                 if resources:
@@ -157,16 +220,18 @@ class SimpleMiner:
             except Exception as e:
                  data['resource'] = {'error': str(e)}
 
-            # /ip/address/print
+            # 3. /ip/address/print
             try:
                 addresses = self.api.get_resource('/ip/address').get()
                 data['addresses'] = addresses
             except Exception as e:
                 data['addresses'] = [{'error': str(e)}]
 
-            # /log/print
+            # 4. /log/print
             try:
                 logs = self.api.get_resource('/log').get()
+                # Assuming simple filtering or no filtering as per "exact logic of conectai.py" which "uses ros_api to get logs and identity"
+                # I will keep the existing filter but ensure it fetches enough
                 filtered_logs = [l for l in logs if 'debug' not in l.get('topics', '')]
                 data['logs'] = filtered_logs[-20:]
             except Exception as e:

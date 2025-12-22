@@ -12,6 +12,14 @@ except ImportError:
     print("Por favor, instale las dependencias con: pip install -r backend/requirements.txt\n")
     sys.exit(1)
 
+try:
+    import routeros_api
+except ImportError:
+    print("\n\033[1;31m[ERROR CRÍTICO]\033[0m La librería 'routeros_api' no está instalada.")
+    print("Por favor, instale las dependencias con: pip install routeros_api\n")
+    sys.exit(1)
+
+
 # Import Hack: Add backend to sys.path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.join(BASE_DIR, 'backend')
@@ -21,7 +29,7 @@ if BACKEND_DIR not in sys.path:
 # Now we can import from cli
 from cli.ui import GandalfUI
 from cli.session import GandalfSession
-from cli.core import async_ping, async_mine_data, GandalfBrain, save_key_to_env, load_or_create_env
+from cli.core import async_ping, async_mine_data, GandalfBrain, save_key_to_env, load_or_create_env, async_verify_connection
 from backend.app.config import Config
 
 async def main():
@@ -75,23 +83,39 @@ async def main():
                 password = await ainput("Password: ")
                 password = password.strip()
 
-                # Verify Network Reachability
-                with ui.console.status("[bold green]🔍 Verificando alcance de red...[/bold green]", spinner="dots"):
+                # Get Port (optional)
+                port_input = await ainput("Port (8728): ")
+                port = int(port_input.strip()) if port_input.strip() else 8728
+
+                # Verify Network Reachability AND Auth
+                is_reachable = False
+                auth_success = False
+
+                with ui.console.status("[bold green]🔍 Verificando conexión y credenciales...[/bold green]", spinner="dots"):
+                     # Step 1: Ping
                     is_reachable = await async_ping(ip)
 
-                if is_reachable:
-                    ui.console.print(f"[green]✓ Host {ip} es alcanzable.[/green]")
+                    if not is_reachable:
+                        ui.console.print(f"[red]✗ Host {ip} no responde al ping.[/red]")
+                    else:
+                        ui.console.print(f"[green]✓ Host {ip} responde al ping.[/green]")
+                        # Step 2: Auth Check
+                        auth_success = await async_verify_connection(ip, user, password, port)
+                        if not auth_success:
+                             ui.console.print("[red]Ping OK, pero Falló Autenticación (User/Pass incorrectos)[/red]")
+                        else:
+                             ui.console.print("[green]✓ Autenticación correcta.[/green]")
+
+                if is_reachable and auth_success:
+                     # Add to session only if fully verified
+                    session.add_target(ip, user, password, port=port, is_alive=True)
+                    # Show Targets Table
+                    ui.console.print("\n") # Spacing
+                    ui.print_targets_table(session.targets)
                 else:
-                    ui.console.print(f"[red]✗ Host {ip} no responde al ping.[/red]")
+                    ui.console.print("[yellow]Objetivo no agregado debido a fallos de conexión o autenticación.[/yellow]")
 
-                # Add to session
-                session.add_target(ip, user, password, is_alive=is_reachable)
-
-                # Show Targets Table
-                ui.console.print("\n") # Spacing
-                ui.print_targets_table(session.targets)
-
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)
 
             elif choice == "2":
                 target = session.active_target

@@ -14,7 +14,7 @@ if BACKEND_DIR not in sys.path:
 # Now we can import from cli
 from cli.ui import GandalfUI
 from cli.session import GandalfSession
-from cli.core import async_ping, async_mine_data, GandalfBrain
+from cli.core import async_ping, async_mine_data, GandalfBrain, save_key_to_env
 
 async def ainput_password(prompt: str) -> str:
     """Async wrapper for getpass to read password securely."""
@@ -30,8 +30,15 @@ async def main():
     current_provider = "deepseek"
 
     ui.show_banner()
+    await asyncio.sleep(1)
 
     while True:
+        # Dashboard Refresh
+        has_key = brain.check_key(current_provider)
+        ui.console.clear()
+        ui.show_banner()
+        ui.print_dashboard(session.active_target, current_provider, has_key)
+
         ui.main_menu()
         try:
             # Non-blocking input
@@ -46,6 +53,7 @@ async def main():
                 ip = ip.strip()
                 if not ip:
                     ui.console.print("[red]IP no puede estar vacía.[/red]")
+                    await asyncio.sleep(1)
                     continue
 
                 # Get User
@@ -53,16 +61,10 @@ async def main():
                 user = user.strip()
                 if not user:
                     ui.console.print("[red]Usuario no puede estar vacío.[/red]")
+                    await asyncio.sleep(1)
                     continue
 
-                # Get Password (using getpass implicitly via ainput_password logic if we want consistency,
-                # but instruction only demanded it for API Key. existing code used ainput.
-                # I will leave existing code for router password as is unless asked,
-                # but instruction said "ainput (input con máscara password)" specifically for API Key?
-                # "Verifica si hay API Key. Si no, pídela con ainput (input con máscara password) e inyéctala."
-                # So I only apply it to API Key.
                 password = await ainput("Password: ")
-                # Password can be empty sometimes, so we allow it but strip it
                 password = password.strip()
 
                 # Verify Network Reachability
@@ -87,7 +89,7 @@ async def main():
                 target = session.active_target
                 if not target:
                     ui.console.print("[red]Error: No hay objetivo seleccionado. Use Opción 1 primero.[/red]")
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(2)
                     continue
 
                 ui.console.print(f"\n[cyan]⛏️ Extrayendo evidencia forense del equipo {target.ip}...[/cyan]")
@@ -101,24 +103,34 @@ async def main():
                     ui.console.print("[green]✓ Extracción completada con éxito.[/green]\n")
                     ui.show_mined_data(data)
 
+                    # Wait for user acknowledgment
+                    await ainput("\n[Presione Enter para continuar]")
+
                 except Exception as e:
                     ui.console.print(f"\n[red]Error durante la extracción: {e}[/red]")
-
-                await asyncio.sleep(1.5)
+                    await asyncio.sleep(3)
 
             elif choice == "3":
                 # AI Sub-menu
                 while True:
+                    # Refresh key status in loop
+                    has_key = brain.check_key(current_provider)
+
+                    ui.console.clear()
+                    ui.show_banner()
+                    ui.print_dashboard(session.active_target, current_provider, has_key)
+
                     ui.console.print(f"\n[bold cyan]🧠 Inteligencia Artificial ({current_provider})[/bold cyan]")
                     ui.console.print("1. Auditoría Automática")
                     ui.console.print("2. Consulta Libre")
                     ui.console.print("3. Cambiar Proveedor")
-                    ui.console.print("4. Volver al menú principal")
+                    ui.console.print("4. Configurar/Guardar API Key")
+                    ui.console.print("5. Volver al menú principal")
 
                     sub_choice = await ainput("\nIA > ")
                     sub_choice = sub_choice.strip()
 
-                    if sub_choice == "4":
+                    if sub_choice == "5":
                         break
 
                     if sub_choice == "3":
@@ -130,25 +142,35 @@ async def main():
                             ui.console.print(f"[green]Proveedor cambiado a {current_provider}[/green]")
                         else:
                             ui.console.print("[red]Proveedor no válido[/red]")
+                        await asyncio.sleep(1)
                         continue
 
-                    # Ensure we have a target and data
+                    if sub_choice == "4":
+                        ui.console.print(f"[cyan]Configurando API Key para: {current_provider}[/cyan]")
+                        key = await ainput_password(f"Ingrese API Key para {current_provider}: ")
+                        key = key.strip()
+                        if key:
+                            key_var = "DEEPSEEK_API_KEY" if current_provider == "deepseek" else "GEMINI_API_KEY"
+                            save_key_to_env(key_var, key)
+                            ui.console.print("[green]API Key guardada correctamente en .env y cargada en sesión.[/green]")
+                        else:
+                            ui.console.print("[red]Operación cancelada (clave vacía).[/red]")
+                        await asyncio.sleep(1.5)
+                        continue
+
+                    # Ensure we have a target and data (for 1 and 2)
                     target = session.active_target
                     if not target:
                         ui.console.print("[red]Error: No hay objetivo seleccionado. Use Opción 1 del menú principal.[/red]")
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(2)
                         break # Go back to main menu
 
                     # Ensure API Key
-                    if not brain.check_key(current_provider):
+                    if not has_key:
                         ui.console.print(f"[yellow]⚠️ No se detectó API Key para {current_provider}.[/yellow]")
-                        # Use secure input
-                        key = await ainput_password(f"Ingrese API Key para {current_provider}: ")
-                        if key.strip():
-                            brain.setup_key(current_provider, key.strip())
-                        else:
-                            ui.console.print("[red]Key requerida para continuar.[/red]")
-                            continue
+                        ui.console.print("Por favor, use la opción 4 para configurar su API Key.")
+                        await asyncio.sleep(2)
+                        continue
 
                     # Ensure Data
                     data = session.last_mined_data
@@ -160,6 +182,7 @@ async def main():
                                 session.set_last_mined_data(data)
                         except Exception as e:
                             ui.console.print(f"[red]Falló la minería de datos: {e}[/red]")
+                            await asyncio.sleep(2)
                             continue
 
                     # Prepare Prompt
@@ -195,10 +218,11 @@ async def main():
                             if summary and summary not in answer:
                                 ui.console.print(f"[bold]Resumen:[/bold] {summary}")
 
+                        await ainput("\n[Presione Enter para continuar]")
+
                     except Exception as e:
                          ui.console.print(f"[red]Error crítico comunicando con la IA: {e}[/red]")
-                         import traceback
-                         traceback.print_exc()
+                         await ainput("\n[Presione Enter para continuar]")
 
             elif choice == "4":
                 ui.console.print("\n[bold cyan]¡Corred, insensatos![/bold cyan]")
@@ -211,8 +235,8 @@ async def main():
             break
         except Exception as e:
             ui.console.print(f"\n[red]Error inesperado: {e}[/red]")
-            import traceback
-            traceback.print_exc()
+            # import traceback
+            # traceback.print_exc()
             await asyncio.sleep(2)
 
 if __name__ == "__main__":
@@ -220,6 +244,5 @@ if __name__ == "__main__":
         # Run the async main loop
         asyncio.run(main())
     except KeyboardInterrupt:
-        # Use simple print here as UI might not be initialized or to be safe during exit
         print("\n\n\033[1;36mEl Mago se desvanece... (Interrupción de usuario)\033[0m")
         sys.exit(0)

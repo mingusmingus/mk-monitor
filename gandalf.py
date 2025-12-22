@@ -2,7 +2,6 @@
 import sys
 import os
 import asyncio
-import getpass
 from aioconsole import ainput
 
 # Import Hack: Add backend to sys.path
@@ -15,11 +14,6 @@ if BACKEND_DIR not in sys.path:
 from cli.ui import GandalfUI
 from cli.session import GandalfSession
 from cli.core import async_ping, async_mine_data, GandalfBrain, save_key_to_env
-
-async def ainput_password(prompt: str) -> str:
-    """Async wrapper for getpass to read password securely."""
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, getpass.getpass, prompt)
 
 async def main():
     ui = GandalfUI()
@@ -147,7 +141,7 @@ async def main():
 
                     if sub_choice == "4":
                         ui.console.print(f"[cyan]Configurando API Key para: {current_provider}[/cyan]")
-                        key = await ainput_password(f"Ingrese API Key para {current_provider}: ")
+                        key = await ainput(f"Input visible (Click derecho para pegar) [{current_provider}]: ")
                         key = key.strip()
                         if key:
                             key_var = "DEEPSEEK_API_KEY" if current_provider == "deepseek" else "GEMINI_API_KEY"

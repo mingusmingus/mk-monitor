@@ -6,6 +6,8 @@ from rich.align import Align
 from rich.table import Table
 from rich.text import Text
 from rich.live import Live
+from rich.columns import Columns
+from rich.layout import Layout
 
 # Import GandalfTarget for type hinting
 try:
@@ -52,6 +54,35 @@ class GandalfUI:
         )
         self.console.print(panel)
 
+    def print_dashboard(self, target: Union['GandalfTarget', None], provider: str, has_key: bool):
+        """
+        Prints the dashboard showing system status.
+        """
+        # Target Status
+        if target:
+            status_color = "green" if target.is_alive else "red"
+            status_text = "ONLINE" if target.is_alive else "OFFLINE"
+            target_info = f"[bold white]{target.ip}[/bold white]\n[{status_color}]{status_text}[/{status_color}]"
+            target_title = f"[cyan]Target ({target.user})[/cyan]"
+        else:
+            target_info = "[dim]No target selected[/dim]"
+            target_title = "[dim]Target[/dim]"
+
+        target_panel = Panel(Align.center(target_info), title=target_title, border_style="cyan")
+
+        # AI Provider Status
+        provider_info = f"[bold white]{provider.upper()}[/bold white]"
+        provider_panel = Panel(Align.center(provider_info), title="[magenta]AI Provider[/magenta]", border_style="magenta")
+
+        # Key Status
+        key_color = "green" if has_key else "red"
+        key_text = "CONFIGURED" if has_key else "MISSING"
+        key_info = f"[{key_color}]{key_text}[/{key_color}]"
+        key_panel = Panel(Align.center(key_info), title="[yellow]API Key[/yellow]", border_style="yellow")
+
+        # Grid Layout
+        self.console.print(Columns([target_panel, provider_panel, key_panel], expand=True))
+
     def main_menu(self):
         """Displays the main menu options."""
         table = Table(show_header=False, box=None)
@@ -97,13 +128,22 @@ class GandalfUI:
         """
         Displays mined forensic data using Rich components.
         """
+        if 'error' in data:
+            self.console.print(f"[bold red]Error in data mining:[/bold red] {data['error']}")
+            return
+
         # Top Panel: System Info
         res = data.get('resource', {})
-        sys_info = f"[bold]Model:[/bold] {res.get('board-name', 'N/A')}\n" \
-                   f"[bold]Version:[/bold] {res.get('version', 'N/A')}\n" \
-                   f"[bold]CPU:[/bold] {res.get('cpu', 'N/A')}\n" \
-                   f"[bold]Uptime:[/bold] {res.get('uptime', 'N/A')}\n" \
-                   f"[bold]CPU Load:[/bold] {res.get('cpu-load', '0')}%"
+        if isinstance(res, dict) and 'error' in res:
+             sys_info = f"[red]Error fetching resource: {res['error']}[/red]"
+        elif isinstance(res, dict):
+            sys_info = f"[bold]Model:[/bold] {res.get('board-name', 'N/A')}\n" \
+                       f"[bold]Version:[/bold] {res.get('version', 'N/A')}\n" \
+                       f"[bold]CPU:[/bold] {res.get('cpu', 'N/A')}\n" \
+                       f"[bold]Uptime:[/bold] {res.get('uptime', 'N/A')}\n" \
+                       f"[bold]CPU Load:[/bold] {res.get('cpu-load', '0')}%"
+        else:
+            sys_info = "No resource data available."
 
         panel = Panel(sys_info, title="[cyan]System Resource[/cyan]", border_style="cyan")
         self.console.print(panel)
@@ -114,8 +154,13 @@ class GandalfUI:
         table.add_column("Address", style="green")
         table.add_column("Network", style="dim")
 
-        for addr in data.get('addresses', []):
-            table.add_row(addr.get('interface'), addr.get('address'), addr.get('network'))
+        addresses = data.get('addresses', [])
+        if isinstance(addresses, list):
+            for addr in addresses:
+                if isinstance(addr, dict) and 'error' in addr:
+                     table.add_row("Error", addr['error'], "")
+                elif isinstance(addr, dict):
+                    table.add_row(addr.get('interface', 'N/A'), addr.get('address', 'N/A'), addr.get('network', 'N/A'))
 
         self.console.print(table)
 
@@ -125,8 +170,11 @@ class GandalfUI:
         log_table.add_column("Topics", style="magenta")
         log_table.add_column("Message", style="white")
 
-        for log in data.get('logs', []):
-            log_table.add_row(log.get('time'), log.get('topics'), log.get('message'))
+        logs = data.get('logs', [])
+        if isinstance(logs, list):
+            for log in logs:
+                if isinstance(log, dict):
+                    log_table.add_row(log.get('time', ''), log.get('topics', ''), log.get('message', ''))
 
         self.console.print(log_table)
 

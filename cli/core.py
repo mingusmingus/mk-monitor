@@ -21,25 +21,73 @@ def init_system_paths(backend_path: str = None):
     if backend_path and backend_path not in sys.path:
         sys.path.append(backend_path)
 
+def save_key_to_env(key_name: str, key_value: str):
+    """
+    Saves the API Key to the .env file in infra/ and updates the current environment.
+    """
+    # Attempt to locate .env file via backend utils if available, or relative path
+    try:
+        from backend.app.core.paths import get_env_file
+        env_path = get_env_file()
+    except ImportError:
+        # Fallback logic if imports fail (unlikely given sys.path setup)
+        # Assuming we are running from root or finding it relatively
+        # Current file is cli/core.py. Root is ../
+        cli_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.dirname(cli_dir)
+        env_path = os.path.join(root_dir, 'infra', '.env')
+
+    # Update current session
+    os.environ[key_name] = key_value
+
+    # Update Config if available
+    try:
+        from backend.app.config import Config
+        setattr(Config, key_name, key_value)
+    except ImportError:
+        pass
+
+    # Update or Append to .env file
+    # If env_path is a Path object, convert to str for consistency if needed, though open() handles Path.
+    if hasattr(env_path, 'parent'):
+        if not os.path.exists(env_path.parent):
+            try:
+                os.makedirs(env_path.parent)
+            except OSError:
+                pass
+
+    lines = []
+    key_found = False
+
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            lines = f.readlines()
+
+    new_lines = []
+    for line in lines:
+        if line.startswith(f"{key_name}="):
+            new_lines.append(f"{key_name}={key_value}\n")
+            key_found = True
+        else:
+            new_lines.append(line)
+
+    if not key_found:
+        if new_lines and not new_lines[-1].endswith('\n'):
+            new_lines[-1] += '\n'
+        new_lines.append(f"{key_name}={key_value}\n")
+
+    with open(env_path, 'w') as f:
+        f.writelines(new_lines)
+
 async def async_ping(ip: str) -> bool:
     """
     Asynchronously pings a host to check if it's reachable.
     Detects OS to use correct ping count flag (-n for Windows, -c for Linux/Mac).
     """
-    # Determine the current operating system
     current_os = platform.system().lower()
-
-    # Select the appropriate ping parameter
-    # Windows uses '-n', others use '-c' to set the number of echo requests
     count_flag = '-n' if current_os == 'windows' else '-c'
 
-    # Construct the command
-    # ping <flag> 1 <ip>
-    # Note: Using 'ping' command which should be in PATH
-
     try:
-        # Create subprocess
-        # stdout and stderr are piped to /dev/null (or equivalent) to avoid cluttering UI
         process = await asyncio.create_subprocess_exec(
             'ping',
             count_flag,
@@ -48,15 +96,9 @@ async def async_ping(ip: str) -> bool:
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL
         )
-
-        # Wait for the process to finish
         return_code = await process.wait()
-
-        # Return True if return_code is 0 (success), else False
         return return_code == 0
-
     except Exception:
-        # In case of any error (e.g., command not found), assume host is unreachable or check failed
         return False
 
 class SimpleMiner:
@@ -72,14 +114,14 @@ class SimpleMiner:
         if not ROUTEROS_AVAILABLE:
             raise ImportError("routeros_api library is not installed.")
 
+        # Fixed: Removed socket_timeout which caused TypeError
         self.connection = routeros_api.RouterOsApiPool(
             self.ip,
             username=self.user,
             password=self.password,
             port=self.port,
             plaintext_login=True,
-            use_ssl=False,
-            socket_timeout=5
+            use_ssl=False
         )
         self.api = self.connection.get_api()
 
@@ -93,26 +135,31 @@ class SimpleMiner:
             self.connect()
 
             # /system/resource/print
-            resources = self.api.get_resource('/system/resource').get()
-            if resources:
-                data['resource'] = resources[0]
+            try:
+                resources = self.api.get_resource('/system/resource').get()
+                if resources:
+                    data['resource'] = resources[0]
+            except Exception as e:
+                 data['resource'] = {'error': str(e)}
 
             # /ip/address/print
-            addresses = self.api.get_resource('/ip/address').get()
-            data['addresses'] = addresses
+            try:
+                addresses = self.api.get_resource('/ip/address').get()
+                data['addresses'] = addresses
+            except Exception as e:
+                data['addresses'] = [{'error': str(e)}]
 
             # /log/print
-            # Getting last 20 logs. Not filtering topics heavily as per prompt request "filtering topics de debug si es posible"
-            # routeros_api allows query but filtering effectively might be easier in python or simple slice.
-            logs = self.api.get_resource('/log').get()
-            # Filter debug if possible, else take last 20
-            # Let's filter out debug topics roughly
-            filtered_logs = [l for l in logs if 'debug' not in l.get('topics', '')]
-            data['logs'] = filtered_logs[-20:]
+            try:
+                logs = self.api.get_resource('/log').get()
+                filtered_logs = [l for l in logs if 'debug' not in l.get('topics', '')]
+                data['logs'] = filtered_logs[-20:]
+            except Exception as e:
+                data['logs'] = [{'message': f'Error fetching logs: {str(e)}'}]
 
         except Exception as e:
-            # Re-raise to be handled by caller
-            raise e
+            # Capture connection errors instead of crashing
+            return {'error': f"Connection failed: {str(e)}"}
         finally:
             self.disconnect()
 
@@ -129,32 +176,33 @@ async def async_mine_data(ip, user, password, port=8728) -> Dict[str, Any]:
 
 class GandalfBrain:
     def __init__(self):
-        # We rely on lazy import in methods or updated env vars
         pass
 
     def check_key(self, provider="deepseek") -> bool:
         """Checks if the API key for the provider is available."""
+        # Check environment first
+        key_var = "DEEPSEEK_API_KEY" if provider == "deepseek" else "GEMINI_API_KEY"
+        if os.environ.get(key_var):
+            return True
+
         try:
-            from app.config import Config
+            from backend.app.config import Config
             if provider == "deepseek":
-                return bool(os.getenv("DEEPSEEK_API_KEY") or Config.DEEPSEEK_API_KEY)
+                return bool(Config.DEEPSEEK_API_KEY)
             elif provider == "gemini":
-                 return bool(os.getenv("GEMINI_API_KEY") or getattr(Config, 'GEMINI_API_KEY', None))
+                 return bool(getattr(Config, 'GEMINI_API_KEY', None))
         except ImportError:
-            # Fallback if Config not loaded yet
             pass
 
-        key_var = "DEEPSEEK_API_KEY" if provider == "deepseek" else "GEMINI_API_KEY"
-        return key_var in os.environ
+        return False
 
     def setup_key(self, provider: str, key: str):
         """Injects the API key into environment and Config."""
         key_var = "DEEPSEEK_API_KEY" if provider == "deepseek" else "GEMINI_API_KEY"
         os.environ[key_var] = key
 
-        # Update Config dynamically so new instances pick it up
         try:
-            from app.config import Config
+            from backend.app.config import Config
             setattr(Config, key_var, key)
         except ImportError:
             pass
@@ -163,20 +211,15 @@ class GandalfBrain:
         """
         Queries the AI provider.
         """
-        # Ensure imports work (backend must be in sys.path)
-        from app.core.ai.factory import AIFactory
+        from backend.app.core.ai.factory import AIFactory
 
         # Force provider selection via env var which Factory reads
         os.environ["AI_PROVIDER"] = provider
 
         ai_provider = AIFactory.get_ai_provider()
 
-        # Convert context to string
         context_str = json.dumps(context, indent=2, default=str)
 
-        # Construct system prompt to ensure JSON output and handle user question
-        # DeepSeekProvider enforces JSON object response format.
-        # We guide the model to put the text answer in 'technical_analysis'.
         full_system_prompt = (
             f"{prompt}\n\n"
             "INSTRUCTIONS:\n"

@@ -23,61 +23,84 @@ def init_system_paths(backend_path: str = None):
 
 def save_key_to_env(key_name: str, key_value: str):
     """
-    Saves the API Key to the .env file in infra/ and updates the current environment.
+    Saves the API Key to the .env file (checking infra/ first, then root)
+    and updates the current environment. Includes newline safety check.
     """
-    # Attempt to locate .env file via backend utils if available, or relative path
-    try:
-        from backend.app.core.paths import get_env_file
-        env_path = get_env_file()
-    except ImportError:
-        # Fallback logic if imports fail (unlikely given sys.path setup)
-        # Assuming we are running from root or finding it relatively
-        # Current file is cli/core.py. Root is ../
-        cli_dir = os.path.dirname(os.path.abspath(__file__))
-        root_dir = os.path.dirname(cli_dir)
-        env_path = os.path.join(root_dir, 'infra', '.env')
+    # 1. Aggressive Strip
+    key_value = key_value.strip()
 
-    # Update current session
+    # 2. Determine Paths
+    # cli/core.py -> parent is cli, parent of cli is root
+    cli_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.dirname(cli_dir)
+
+    infra_env = os.path.join(root_dir, 'infra', '.env')
+    root_env = os.path.join(root_dir, '.env')
+
+    # Priority: infra/.env if exists, else .env if exists, else create in root .env
+    # (However, per instructions: "Si no existe en ninguno, créalo en la raíz.")
+
+    target_env = None
+    if os.path.exists(infra_env):
+        target_env = infra_env
+    elif os.path.exists(root_env):
+        target_env = root_env
+    else:
+        target_env = root_env  # Default to root
+
+    # 3. Update Runtime Session
     os.environ[key_name] = key_value
 
-    # Update Config if available
+    # Update Config class if available (for current execution)
     try:
         from backend.app.config import Config
         setattr(Config, key_name, key_value)
     except ImportError:
         pass
 
-    # Update or Append to .env file
-    # If env_path is a Path object, convert to str for consistency if needed, though open() handles Path.
-    if hasattr(env_path, 'parent'):
-        if not os.path.exists(env_path.parent):
-            try:
-                os.makedirs(env_path.parent)
-            except OSError:
-                pass
+    # 4. Smart Write to File
+    # Ensure directory exists (mostly for the root case if something is weird, but root should exist)
+    target_dir = os.path.dirname(target_env)
+    if not os.path.exists(target_dir):
+        try:
+            os.makedirs(target_dir)
+        except OSError:
+            pass
 
     lines = []
-    key_found = False
-
-    if os.path.exists(env_path):
-        with open(env_path, 'r') as f:
-            lines = f.readlines()
+    if os.path.exists(target_env):
+        try:
+            with open(target_env, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        except UnicodeDecodeError:
+             with open(target_env, 'r') as f: # Fallback
+                lines = f.readlines()
 
     new_lines = []
+    key_found = False
+
     for line in lines:
-        if line.startswith(f"{key_name}="):
+        # Check if line starts with KEY= (ignoring whitespace)
+        if line.strip().startswith(f"{key_name}="):
             new_lines.append(f"{key_name}={key_value}\n")
             key_found = True
         else:
             new_lines.append(line)
 
     if not key_found:
-        if new_lines and not new_lines[-1].endswith('\n'):
-            new_lines[-1] += '\n'
+        # Logic to prevent appending to a line without \n
+        if new_lines:
+            last_line = new_lines[-1]
+            if not last_line.endswith('\n'):
+                new_lines[-1] = last_line + '\n'
+
         new_lines.append(f"{key_name}={key_value}\n")
 
-    with open(env_path, 'w') as f:
-        f.writelines(new_lines)
+    try:
+        with open(target_env, 'w', encoding='utf-8') as f:
+            f.writelines(new_lines)
+    except Exception as e:
+        print(f"Error saving .env: {e}")
 
 async def async_ping(ip: str) -> bool:
     """

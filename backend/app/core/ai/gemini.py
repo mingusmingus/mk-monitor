@@ -13,8 +13,15 @@ class GeminiProvider(BaseAIProvider):
     """
     def __init__(self):
         self.api_key = Config.GEMINI_API_KEY
-        # Updated model to gemini-1.5-flash as requested to avoid 404
-        self.api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={self.api_key}"
+        self.model = Config.GEMINI_MODEL
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta"
+
+        # Logic to ensure model starts with models/
+        model_id = self.model
+        if not model_id.startswith("models/"):
+            model_id = f"models/{model_id}"
+
+        self.api_url = f"{self.base_url}/{model_id}:generateContent?key={self.api_key}"
 
     async def analyze(self, context: str, prompt_template: str) -> Dict[str, Any]:
         """

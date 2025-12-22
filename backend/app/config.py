@@ -64,6 +64,7 @@ class Config:
     DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash-001")
 
     AI_ANALYSIS_PROVIDER = os.getenv("AI_ANALYSIS_PROVIDER", "auto")
     AI_PROVIDER = os.getenv("AI_PROVIDER", AI_ANALYSIS_PROVIDER) # Unified provider config

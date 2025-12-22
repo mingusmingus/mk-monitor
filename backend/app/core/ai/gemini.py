@@ -13,11 +13,8 @@ class GeminiProvider(BaseAIProvider):
     """
     def __init__(self):
         self.api_key = Config.GEMINI_API_KEY
-        # Using HTTP REST API for Gemini to avoid heavy dependencies if preferred,
-        # or we could use google-generativeai. User said:
-        # "Implement the base structure using google.generativeai (or prepare it for HTTP requests if you prefer not to add heavy dependencies yet)."
-        # I will use HTTP requests for now to keep it lightweight as requested alternative.
-        self.api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={self.api_key}"
+        # Updated model to gemini-1.5-flash as requested to avoid 404
+        self.api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={self.api_key}"
 
     async def analyze(self, context: str, prompt_template: str) -> Dict[str, Any]:
         """

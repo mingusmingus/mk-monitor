@@ -4,6 +4,7 @@ import os
 import asyncio
 import platform
 import json
+from pathlib import Path
 from typing import Dict, Any, List
 
 # Try importing routeros_api
@@ -21,32 +22,26 @@ def init_system_paths(backend_path: str = None):
     if backend_path and backend_path not in sys.path:
         sys.path.append(backend_path)
 
+def load_or_create_env() -> str:
+    """
+    Locates the root .env file.
+    Returns the path to the .env file.
+    """
+    # cli/core.py -> cli/ -> root/
+    current_dir = Path(__file__).resolve().parent
+    root_dir = current_dir.parent
+    return str(root_dir / '.env')
+
 def save_key_to_env(key_name: str, key_value: str):
     """
-    Saves the API Key to the .env file (checking infra/ first, then root)
+    Saves the API Key to the .env file (EXCLUSIVELY in ROOT)
     and updates the current environment. Includes newline safety check.
     """
     # 1. Aggressive Strip
     key_value = key_value.strip()
 
-    # 2. Determine Paths
-    # cli/core.py -> parent is cli, parent of cli is root
-    cli_dir = os.path.dirname(os.path.abspath(__file__))
-    root_dir = os.path.dirname(cli_dir)
-
-    infra_env = os.path.join(root_dir, 'infra', '.env')
-    root_env = os.path.join(root_dir, '.env')
-
-    # Priority: infra/.env if exists, else .env if exists, else create in root .env
-    # (However, per instructions: "Si no existe en ninguno, créalo en la raíz.")
-
-    target_env = None
-    if os.path.exists(infra_env):
-        target_env = infra_env
-    elif os.path.exists(root_env):
-        target_env = root_env
-    else:
-        target_env = root_env  # Default to root
+    # 2. Determine Path (Root .env)
+    target_env = load_or_create_env()
 
     # 3. Update Runtime Session
     os.environ[key_name] = key_value
@@ -59,21 +54,18 @@ def save_key_to_env(key_name: str, key_value: str):
         pass
 
     # 4. Smart Write to File
-    # Ensure directory exists (mostly for the root case if something is weird, but root should exist)
-    target_dir = os.path.dirname(target_env)
-    if not os.path.exists(target_dir):
-        try:
-            os.makedirs(target_dir)
-        except OSError:
-            pass
+    # Ensure directory exists
+    target_path = Path(target_env)
+    if not target_path.parent.exists():
+        target_path.parent.mkdir(parents=True, exist_ok=True)
 
     lines = []
-    if os.path.exists(target_env):
+    if target_path.exists():
         try:
-            with open(target_env, 'r', encoding='utf-8') as f:
+            with open(target_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
         except UnicodeDecodeError:
-             with open(target_env, 'r') as f: # Fallback
+             with open(target_path, 'r') as f: # Fallback
                 lines = f.readlines()
 
     new_lines = []
@@ -97,7 +89,7 @@ def save_key_to_env(key_name: str, key_value: str):
         new_lines.append(f"{key_name}={key_value}\n")
 
     try:
-        with open(target_env, 'w', encoding='utf-8') as f:
+        with open(target_path, 'w', encoding='utf-8') as f:
             f.writelines(new_lines)
     except Exception as e:
         print(f"Error saving .env: {e}")
@@ -235,9 +227,21 @@ class GandalfBrain:
         Queries the AI provider.
         """
         from backend.app.core.ai.factory import AIFactory
+        from backend.app.config import Config
 
-        # Force provider selection via env var which Factory reads
+        # Use configuration provider if set to specific engine, or override with argument
+        # Ideally, respect what's passed, or what's in env
+        # The instruction implies user can change provider
+
+        # We ensure env var is set so Factory picks it up if it reads os.environ directly
+        # or we rely on config reloading.
+        # But AIFactory logic might rely on Config.AI_PROVIDER
+
+        # Let's ensure the passed provider is used
         os.environ["AI_PROVIDER"] = provider
+
+        # Also update Config to be safe if Factory reads Config
+        Config.AI_PROVIDER = provider
 
         ai_provider = AIFactory.get_ai_provider()
 

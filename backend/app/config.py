@@ -10,23 +10,24 @@ Soporta carga desde archivo .env para entornos de desarrollo.
 import os
 import base64
 from pathlib import Path
-from backend.app.core.paths import INFRA_DIR, get_env_file
 
-# Carga opcional de variables desde .env en desarrollo
+# Carga opcional de variables desde .env en la RAÍZ
 try:
     from dotenv import load_dotenv
 
-    # Usamos la ruta centralizada definida en core/paths.py
-    env_file = get_env_file()
-    
-    if env_file.exists():
-        load_dotenv(env_file, encoding='utf-8')
+    # basedir = backend/app/config.py -> backend/app
+    basedir = Path(__file__).resolve().parent
+    # root = backend/app/../../.env -> .env (Raíz del proyecto)
+    env_path = basedir.parent.parent / '.env'
+
+    if env_path.exists():
+        load_dotenv(env_path, encoding='utf-8')
     else:
-        # Fallback a carga genérica por si las variables están en el sistema
+        # Fallback a carga genérica
         load_dotenv()
 except Exception as e:
     import warnings
-    warnings.warn(f"No se pudo cargar el archivo .env desde {INFRA_DIR}: {e}", RuntimeWarning)
+    warnings.warn(f"No se pudo cargar el archivo .env desde {env_path}: {e}", RuntimeWarning)
 
 class Config:
     """
@@ -57,12 +58,11 @@ class Config:
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173")
     DEBUG = os.getenv("DEBUG", "1") == "1"
 
-    # Integración IA (DeepSeek)
+    # Integración IA
     DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
     DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com/v1/chat/completions")
     DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
-    # Google Gemini
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
     AI_ANALYSIS_PROVIDER = os.getenv("AI_ANALYSIS_PROVIDER", "auto")

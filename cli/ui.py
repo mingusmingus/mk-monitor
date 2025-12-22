@@ -92,7 +92,9 @@ class GandalfUI:
         table.add_row("1", "Gestionar Objetivos (Router)")
         table.add_row("2", "Diagnóstico de Red")
         table.add_row("3", "Invocar Inteligencia Artificial")
-        table.add_row("4", "Salir")
+        table.add_row("4", "Cambiar Motor de IA de la Plataforma") # Nueva Opción
+        table.add_row("5", "Gestionar API Keys") # Nueva Opción
+        table.add_row("6", "Salir")
 
         self.console.print("\n[bold]Seleccione una opción:[/bold]")
         self.console.print(table)

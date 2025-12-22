@@ -1,0 +1,20 @@
+=== MAPA DE ARQUITECTURA DE IA ===
+
+1. UBICACIÓN DE ARCHIVOS:
+   - Configuración: backend/app/config.py
+   - Fábrica (Factory): backend/app/core/ai/factory.py
+   - Proveedor Base: backend/app/core/ai/base.py
+   - Proveedor DeepSeek: backend/app/core/ai/deepseek.py
+   - Proveedor Gemini: backend/app/core/ai/gemini.py
+
+2. VARIABLES DE ENTORNO REQUERIDAS (Según el código actual):
+   - ¿Qué variables busca 'config.py' realmente?
+   - DEEPSEEK_API_KEY
+   - DEEPSEEK_API_URL (Opcional, tiene default)
+   - DEEPSEEK_MODEL (Opcional, tiene default)
+   - GEMINI_API_KEY
+   - AI_PROVIDER (o AI_ANALYSIS_PROVIDER)
+
+3. DIAGNÓSTICO DE INTEGRACIÓN:
+   - ¿El código actual sabe leer 'GEMINI_API_KEY'? [SI]
+   - ¿Existe lógica para cambiar de proveedor dinámicamente? [SI]

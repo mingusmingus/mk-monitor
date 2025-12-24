@@ -11,7 +11,7 @@ import os
 import base64
 from pathlib import Path
 
-# Carga opcional de variables desde .env en la RAÍZ
+# Carga obligatoria de variables desde .env en la RAÍZ
 try:
     from dotenv import load_dotenv
 
@@ -23,7 +23,8 @@ try:
     if env_path.exists():
         load_dotenv(env_path, encoding='utf-8')
     else:
-        # Fallback a carga genérica
+        # Si no existe, intentamos carga genérica por si acaso,
+        # pero para config estricta esto podría ser un error si no hay vars en os.
         load_dotenv()
 except Exception as e:
     import warnings
@@ -32,6 +33,8 @@ except Exception as e:
 class Config:
     """
     Clase que encapsula todas las variables de configuración del sistema.
+    Todas las variables se cargan mediante os.getenv, confiando en que
+    dotenv ya inyectó las variables del .env de raíz.
     """
     # Entorno
     APP_ENV = os.getenv("APP_ENV", "dev")

@@ -1,0 +1,93 @@
+
+ESTRATEGIA DE IMPORTACIÓN (DRY)
+---------------------------------
+Dado que gandalf.py residirá en la raíz y necesita acceder a módulos dentro de `backend/`, la estrategia principal es ajustar `sys.path` antes de cualquier importación de `backend`.
+
+1. **Ajuste de sys.path**: Similar a `backend/wsgi.py`, usaremos `pathlib` para insertar la ruta raíz en `sys.path`. Esto permite importar `backend.app...` como si fuera un paquete instalado.
+   ```python
+   import sys
+   from pathlib import Path
+   ROOT_DIR = Path(__file__).resolve().parent
+   if str(ROOT_DIR) not in sys.path:
+       sys.path.insert(0, str(ROOT_DIR))
+   ```
+2. **Evitar Importación Circular**: No importaremos `create_app` a menos que sea necesario para inicializar contextos de base de datos. Como gandalf.py es una herramienta CLI independiente que gestiona objetivos en RAM (según requisitos), podemos importar las clases necesarias (`DeviceMiner`, `AIFactory`, `Device`) directamente.
+3. **Manejo de Dependencias**:
+   - `DeviceMiner` requiere `Device` (modelo) y `Config`.
+   - `Device` requiere `db`. Al importar `backend.app.models.device`, SQLAlchemy definirá el modelo, pero no necesitamos conectar a la DB real si instanciamos objetos `Device` en memoria sin hacer `db.session.add()`.
+   - `Config` requiere variables de entorno. `gandalf.py` debe cargar `.env` (usando `dotenv` o similar, o confiando en que `backend.app.config` ya maneja `os.environ`).
+   - `DeviceService.decrypt_secret` necesita `Config`.
+   - **Solución para DB**: `Device` es un modelo SQLAlchemy. Instanciarlo `d = Device(ip_address=...)` no requiere contexto de aplicación activo, siempre que no accedamos a relaciones lazy o intentemos persistirlo.
+
+SOLUCIÓN DE CONCURRENCIA (The Blocking Issue)
+-----------------------------------------------
+La mezcla de `input()` (bloqueante) con `asyncio` (para IA y concurrencia futura) y `DeviceMiner` (que usa `routeros_api` síncrono) requiere un enfoque híbrido.
+
+1. **Loop Principal Asyncio**: `gandalf.py` tendrá un punto de entrada `async def main():` ejecutado por `asyncio.run(main())`.
+2. **Input No Bloqueante**: Usaremos `aioconsole.ainput()` si se permite añadir dependencia, o `loop.run_in_executor(None, input, prompt)` para mantener el event loop vivo mientras el usuario escribe. Esto es vital para animaciones (loading spinners) o tareas de fondo.
+   - *Recomendación Senior*: Usar `run_in_executor` para `input` mantiene las dependencias bajas (standard library) y es robusto.
+3. **Mikrotik Sync en Mundo Async**: `DeviceMiner` es síncrono. Envolveremos sus llamadas (ej: `miner.mine()`) en `loop.run_in_executor(None, miner.mine)`. Esto evita congelar la interfaz mientras se conecta al router.
+4. **IA Async**: Los proveedores de IA (`backend/app/core/ai/`) ya son `async def analyze(...)`, así que se llamarán directamente con `await`.
+
+DISEÑO DE CLASES (Pseudo-código)
+---------------------------------
+```python
+@dataclass
+class GandalfTarget:
+    ip: str
+    user: str
+    password: str # En memoria, quizás cifrado si se guarda en disco
+    port: int = 8728
+
+    def to_device_model(self) -> 'Device':
+        # Convierte el target ligero en un modelo Device compatible con DeviceMiner
+        # Cifra las credenciales en memoria usando utils.encrypt_secret si es necesario
+        return Device(...)
+
+class GandalfSession:
+    def __init__(self):
+        self.targets: List[GandalfTarget] = []
+        self.active_target_index: int = -1
+        self.ai_provider: BaseAIProvider = AIFactory.get_ai_provider()
+        self.chat_history: List[Dict] = []
+        self.running: bool = True
+
+    @property
+    def current_target(self) -> Optional[GandalfTarget]:
+        if 0 <= self.active_target_index < len(self.targets):
+            return self.targets[self.active_target_index]
+        return None
+
+    async def add_target(self):
+        # Lógica interactiva para añadir IP/User/Pass
+        pass
+
+    async def run_mining(self) -> Dict:
+        # Wrapper async para DeviceMiner
+        pass
+```
+
+ANÁLISIS DE RIESGOS & LIMITACIONES
+------------------------------------
+1. **Logs Masivos (Buffer Overflow/Token Limit)**:
+   - *Riesgo*: Un router con logging debug activo puede tener miles de líneas. `DeviceMiner` extrae los últimos 50, lo cual es seguro, pero si un usuario pide "todo", podría desbordar la memoria o el contexto de la IA.
+   - *Solución*: Implementar "Ventana Deslizante" o "Smart Truncation". Solo enviar a la IA las últimas N líneas o filtrar por severidad (error/critical).
+   - *Límite de Tokens*: Las APIs de IA tienen límites (ej: 4k, 8k, 32k tokens). Debemos contar tokens (estimación) y recortar el contexto JSON antes de enviarlo.
+
+2. **Seguridad en RAM**:
+   - *Riesgo*: Las contraseñas residen en texto plano (o cifrado reversible) en la memoria de `GandalfSession`. Un dump de memoria podría revelarlas.
+   - *Mitigación*: Aceptable para una herramienta CLI de sesión efímera, pero se debe advertir al usuario. Limpiar variables al cerrar.
+
+3. **Dependencia de routeros_api**:
+   - *Riesgo*: La librería es síncrona y bloqueante.
+   - *Mitigación*: El uso de `Executor` es obligatorio. Si falla la conexión, debe tener un timeout estricto para no colgar la CLI.
+
+PROPUESTA DE MEJORAS (Value Add)
+---------------------------------
+1. **Modo Stealth (Forense Silencioso)**:
+   - Al conectar, Gandalf podría desactivar temporalmente el logging del router o evitar comandos ruidosos (`/tool/bandwidth-test`) para no alterar la evidencia o alertar a un intruso que esté monitoreando los logs en tiempo real.
+   - *Implementación*: Un flag `--stealth` que pasa a `DeviceMiner` para usar solo comandos `print` pasivos y no `fetch` o `ping` activos.
+
+2. **Local Vault (Cifrado de Sesión)**:
+   - Permitir guardar la lista de objetivos (IPs/Credenciales) en un archivo local cifrado (`targets.json.enc`) usando una Master Password que pide al inicio.
+   - *Valor*: Evita re-teclear credenciales de múltiples routers cada vez que se abre la herramienta, manteniendo la seguridad.

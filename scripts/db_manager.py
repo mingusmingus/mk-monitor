@@ -57,38 +57,41 @@ def run_command(command: List[str], cwd: str = None) -> int:
         log_error(f"Error inesperado: {e}")
         return 1
 
-def resolve_paths() -> Tuple[Path, Path, Path]:
+def resolve_paths() -> Tuple[Path, Path]:
     """
     Detecta las rutas críticas del proyecto de forma robusta usando pathlib.
-    Retorna: (root_dir, backend_dir, infra_dir)
+    Retorna: (root_dir, backend_dir)
     """
     # Este script está en scripts/db_manager.py
     script_path = Path(__file__).resolve()
-    root_dir = script_path.parent.parent # root del repo
-
+    # scripts/db_manager.py -> scripts -> root
+    root_dir = script_path.parent.parent
     backend_dir = root_dir / "backend"
-    infra_dir = root_dir / "infra"
 
     # Validaciones estructurales
     if not backend_dir.is_dir():
         log_error(f"Estructura inválida: No se encontró backend en {backend_dir}")
         sys.exit(1)
 
-    if not infra_dir.is_dir():
-        log_error(f"Estructura inválida: No se encontró infra en {infra_dir}")
-        sys.exit(1)
+    return root_dir, backend_dir
 
-    return root_dir, backend_dir, infra_dir
-
-def verify_environment(infra_dir: Path):
-    """Verifica que exista el archivo .env en infra/."""
-    env_path = infra_dir / ".env"
+def verify_environment(root_dir: Path):
+    """Verifica que exista el archivo .env en la RAÍZ."""
+    env_path = root_dir / ".env"
     if not env_path.exists():
         log_error(f"No se encontró el archivo de entorno crítico: {env_path}")
-        log_info("Por favor cree el archivo infra/.env con las variables necesarias (DATABASE_URL, etc).")
+        log_info("Por favor cree el archivo .env en la raíz del proyecto.")
         sys.exit(1)
     else:
         log_success(f"Archivo de entorno encontrado: {env_path}")
+        # Cargar variables de entorno explícitamente para este proceso
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(env_path)
+        except ImportError:
+            log_error("Falta la librería python-dotenv.")
+            log_info("Ejecute: pip install python-dotenv")
+            sys.exit(1)
 
 def get_alembic_args(backend_dir: Path) -> List[str]:
     """Retorna los argumentos base para alembic incluyendo el config explícito."""
@@ -145,10 +148,10 @@ def main():
         sys.exit(1)
 
     # 1. Resolver rutas
-    root_dir, backend_dir, infra_dir = resolve_paths()
+    root_dir, backend_dir = resolve_paths()
 
-    # 2. Verificar entorno
-    verify_environment(infra_dir)
+    # 2. Verificar entorno y cargar .env
+    verify_environment(root_dir)
 
     # 3. Asegurar dependencias
     try:

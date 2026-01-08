@@ -1,0 +1,88 @@
+REPORTE DE AUDITORÍA FORENSE "ZERO TOLERANCE"
+=================================================
+FECHA: 2024-05-22
+AUDITOR: JULES (Rol: Arquitecto Senior & Cliente Exigente)
+ESTADO: 🔴 CRÍTICO / 🟡 ALERTA / 🔵 MEJORA
+
+---
+
+## 🔴 [BLOQUEANTE/CRÍTICO] - Seguridad, Lógica y Estabilidad
+
+1.  **Tecnología Incorrecta (Major Mismatch)**
+    *   **Archivo:** `backend/requirements.txt` y `backend/wsgi.py`
+    *   **Hallazgo:** El requerimiento indica "Revisa backend (FastAPI)", pero el código fuente es inequívocamente **FLASK**.
+    *   **Evidencia:** `requirements.txt` lista `Flask`, `Flask-SQLAlchemy`. `config.py` usa `SQLALCHEMY_DATABASE_URI`.
+    *   **Riesgo:** Si intentas correr esto con un servidor ASGI (uvicorn/fastapi), fallará catastróficamente.
+
+2.  **Credenciales Hardcodeadas en Infraestructura**
+    *   **Archivo:** `infra/docker-compose.yml` (Líneas 7, 21)
+    *   **Hallazgo:** `POSTGRES_PASSWORD: mkmonitor`.
+    *   **Riesgo:** Si este archivo se usa para desplegar en staging/prod sin sobrescribir variables, la base de datos es vulnerable. No hay variable de entorno `POSTGRES_PASSWORD_FILE` para uso de Docker Secrets.
+
+3.  **Inyección de Path Frágil en CLI**
+    *   **Archivo:** `gandalf.py` (Líneas 12-14)
+    *   **Hallazgo:** `sys.path.append(os.path.join(BASE_DIR, 'backend'))`.
+    *   **Riesgo:** Asume rígidamente la estructura de directorios. Si el script se mueve o ejecuta desde otro contexto (ej: como paquete instalado), romperá todos los imports del backend.
+
+4.  **Lógica de "Dangerous Action" Insegura (UX/Security)**
+    *   **Archivo:** `frontend/src/pages/DeviceDetailPage.jsx` (Línea 126)
+    *   **Hallazgo:** `if (!window.confirm("..."))`.
+    *   **Riesgo:** El uso de diálogos nativos del navegador (`alert`, `confirm`) es bloqueante para el hilo principal de JS y ofrece una UX terrible/insegura (fácil de clickear por error). Debe usarse un Modal del Design System.
+
+5.  **Configuración de CORS/API Incompleta**
+    *   **Archivo:** `frontend/src/api/client.js` (Línea 10)
+    *   **Hallazgo:** `baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api'`.
+    *   **Riesgo:** Si la variable de entorno falta en el build de producción, el frontend intentará atacar a `localhost` del cliente, rompiendo la app. Debería fallar el build si no está definida o usar una relativa `/api`.
+
+---
+
+## 🟡 [UX & CLIENTE] - "Callejones sin Salida" e Inconsistencias
+
+1.  **"Spaghetti Styling" (Deuda Visual Masiva)**
+    *   **Archivo:** `frontend/src/pages/DeviceDetailPage.jsx`
+    *   **Hallazgo:** Uso excesivo de estilos en línea (`style={{...}}`) en casi todos los `div`. (Ej: líneas 155, 158, 166, 178...).
+    *   **Impacto:** Imposible de mantener, ignora el archivo `theme.css`, rompe el modo oscuro/claro si los colores están hardcodeados (ej: `color: 'var(--color-text-secondary)'` es un intento, pero mezcla lógica con presentación).
+
+2.  **Flujos Faltantes (Dead Ends)**
+    *   **Archivo:** `frontend/src/App.jsx`
+    *   **Hallazgo:** No existen rutas para `/profile`, `/settings`, ni gestión de usuarios, a pesar de que el modelo `User` tiene campos como `full_name`.
+    *   **Impacto:** El usuario puede loguearse pero no puede cambiar su contraseña ni ver sus datos.
+
+3.  **Feedback de Usuario Inconsistente**
+    *   **Archivo:** `frontend/src/pages/DeviceDetailPage.jsx` (Línea 137)
+    *   **Hallazgo:** `alert("Hubo un error al eliminar el dispositivo.")` en el catch.
+    *   **Impacto:** El sistema usa `SessionExpiredModal` (custom) para auth, pero `alert()` nativo para errores de negocio. Incoherencia visual total.
+
+4.  **Mock Data "Sucio" en Producción**
+    *   **Archivo:** `frontend/src/pages/DeviceDetailPage.jsx` (Líneas 43-73)
+    *   **Hallazgo:** La función `getMockForensicData` está definida *dentro* del componente y ocupa 30 líneas de código que se envían al cliente final.
+    *   **Impacto:** Aumenta el bundle size y ensucia el código. Debe moverse a un servicio `mockService.js` y cargarse condicionalmente.
+
+---
+
+## 🔵 [LIMPIEZA & REFACTOR] - Calidad de Código
+
+1.  **Disonancia en Docker Mounts**
+    *   **Archivo:** `infra/docker-compose.yml` vs `backend/Dockerfile`
+    *   **Hallazgo:** Dockerfile copia a `./app` (workdir `/app`), pero Compose monta `../backend/app:/app/app`.
+    *   **Problema:** Crea una estructura anidada confusa `/app/app` dentro del contenedor. Si un import absoluto en Python espera `backend.app`, esto puede causar "ModuleNotFoundError" dependiendo de cómo se lance Gunicorn.
+
+2.  **Scripts Monolíticos**
+    *   **Archivo:** `gandalf.py`
+    *   **Hallazgo:** Mezcla lógica de presentación (ASCII Art, colores), lógica de negocio (mining) y configuración en un solo archivo de 300 líneas.
+    *   **Sugerencia:** Separar en `scripts/cli/ui.py`, `scripts/cli/core.py`.
+
+3.  **Imports de React Obsoletos/Redundantes**
+    *   **Archivo:** `frontend/src/pages/DeviceDetailPage.jsx`
+    *   **Hallazgo:** `import React, { ... } from 'react'`.
+    *   **Mejora:** En React 17+ (Vite), importar `React` ya no es estrictamente necesario para JSX, solo los hooks. Limpieza menor.
+
+---
+
+**CONCLUSIÓN DEL ARQUITECTO:**
+El proyecto tiene una base sólida en el backend (Flask bien estructurado con Blueprints y Config class), pero el frontend sufre de "prisa por prototipar" (estilos en línea, mocks hardcodeados, alerts nativos). La discrepancia Flask/FastAPI en la documentación/requerimiento es el error más grave de comunicación.
+
+**ACCIÓN RECOMENDADA INMEDIATA:**
+1.  Confirmar si se migra a FastAPI o se actualiza la documentación para decir "Flask".
+2.  Refactorizar `DeviceDetailPage` para eliminar estilos en línea y usar clases CSS.
+3.  Reemplazar `window.confirm` y `alert` por componentes del sistema de diseño.
